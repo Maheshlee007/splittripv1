@@ -2,7 +2,7 @@ import { useState } from "react";
 import { ArrowRight, ExternalLink, QrCode } from "lucide-react";
 import QRCode from "qrcode";
 import { useEffect } from "react";
-import { Group, Transfer } from "@/lib/types";
+import { Group } from "@/lib/types";
 import { computeBalances, simplifyDebts } from "@/lib/balances";
 import { fmtMoney } from "@/lib/format";
 import { buildUpiLink } from "@/lib/upi";
