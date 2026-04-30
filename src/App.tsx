@@ -3,7 +3,12 @@ import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import Index from "./pages/Index.tsx";
+import { AppStoreProvider } from "@/store/AppStore";
+import AppShell from "@/components/AppShell";
+import TripsPage from "@/pages/TripsPage";
+import GroupPage from "@/pages/GroupPage";
+import TripPickerPage from "@/pages/TripPickerPage";
+import MePage from "@/pages/MePage";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -13,13 +18,21 @@ const App = () => (
     <TooltipProvider>
       <Toaster />
       <Sonner />
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Index />} />
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
+      <AppStoreProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route element={<AppShell />}>
+              <Route path="/" element={<TripsPage />} />
+              <Route path="/trip/:id" element={<GroupPage />} />
+              <Route path="/expenses" element={<TripPickerPage title="Expenses" subtitle="Across your trips" target="expenses" />} />
+              <Route path="/balances" element={<TripPickerPage title="Balances" subtitle="Across your trips" target="balances" />} />
+              <Route path="/requests" element={<TripPickerPage title="Requests" subtitle="Across your trips" target="requests" />} />
+              <Route path="/me" element={<MePage />} />
+            </Route>
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </BrowserRouter>
+      </AppStoreProvider>
     </TooltipProvider>
   </QueryClientProvider>
 );
