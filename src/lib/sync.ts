@@ -1,7 +1,7 @@
 import * as Y from "yjs";
 import { WebrtcProvider } from "y-webrtc";
 import { IndexeddbPersistence } from "y-indexeddb";
-import { Group } from "./types";
+import type { Group } from "./types";
 
 interface Slot {
   doc: Y.Doc;

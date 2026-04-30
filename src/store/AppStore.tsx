@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { customAlphabet, nanoid } from "nanoid";
 import { Expense, ExpenseRequest, Group, Member, Profile, Settlement, Split, SplitMode } from "@/lib/types";
 import { loadGroups, loadProfile, loadTheme, saveGroup, saveProfile, saveTheme, deleteGroup } from "@/lib/storage";
-import { connectGroup, disconnectGroup, broadcastGroup, onRemoteGroup, peerCount } from "@/lib/sync";
+import { connectGroup, disconnectGroup, broadcastGroup, onRemoteGroup } from "@/lib/sync";
 
 const codeAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const newCode = customAlphabet(codeAlphabet, 6);
