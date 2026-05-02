@@ -39,10 +39,9 @@ export default function GroupPage() {
   const live = (peers[group.id] ?? 0) > 0;
   const role = myRole(group.id);
   const isAdmin = role === "owner" || role === "admin";
-  const me = group.members.find((m) => m.role && group.members.length > 0);
-  const myEntry = group.members.find((m) => m.id === (group as any).__selfId) ?? group.members.find((m) => m.role && m.id);
-  // Simpler: use role to detect pending status of self
-  const selfPending = !!group.members.find((m) => m.role === "member" && m.status === "pending" && role === "member");
+  const { profile } = useApp();
+  const selfMember = group.members.find((m) => m.id === profile.id);
+  const selfPending = selfMember?.status === "pending";
 
   const handleAdd = (payload: Parameters<typeof addExpense>[1]) => {
     if (isAdmin) addExpense(group.id, payload);
