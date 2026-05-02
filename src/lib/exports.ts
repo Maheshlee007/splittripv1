@@ -137,3 +137,22 @@ export async function exportImage(node: HTMLElement, filename: string): Promise<
   a.download = filename;
   a.click();
 }
+
+export function exportJSON(g: Group): void {
+  const blob = new Blob([JSON.stringify(g, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${g.name.replace(/[^\w]+/g, "_")}_${g.id}.splittrip.json`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+export async function importJSON(file: File): Promise<Group> {
+  const text = await file.text();
+  const g = JSON.parse(text) as Group;
+  if (!g || typeof g !== "object" || !g.id || !Array.isArray(g.members)) {
+    throw new Error("Invalid SplitTrip JSON");
+  }
+  return g;
+}

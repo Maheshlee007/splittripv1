@@ -3,8 +3,11 @@ export type Role = "owner" | "admin" | "member";
 export interface Member {
   id: string;
   name: string;
+  phone?: string;
   upiId?: string;
   role: Role;
+  /** pending = waiting for owner approval after self-join */
+  status?: "active" | "pending";
 }
 
 export type SplitMode = "equal" | "shares" | "exact" | "percent";
@@ -24,7 +27,9 @@ export interface Expense {
   category: string;
   note?: string;
   splitMode: SplitMode;
-  splits: Split[];         // participants
+  splits: Split[];         // participants (members excluded are simply not in this list)
+  /** optional dataURL of the bill photo */
+  billImage?: string;
   createdAt: number;
   createdBy: string;
   updatedAt: number;
@@ -71,5 +76,6 @@ export interface Group {
 export interface Profile {
   id: string;
   name: string;
+  phone?: string;
   upiId?: string;
 }

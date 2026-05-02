@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,6 +9,8 @@ import { CATEGORIES } from "@/lib/categories";
 import { fmtMoney } from "@/lib/format";
 import { computeShareAmount } from "@/lib/balances";
 import { cn } from "@/lib/utils";
+import { Camera, Image as ImageIcon, X, Users, UserCheck, UserX } from "lucide-react";
+import { toast } from "sonner";
 
 interface Props {
   open: boolean;
@@ -28,6 +30,26 @@ const MODES: { id: SplitMode; label: string }[] = [
   { id: "percent", label: "%" },
 ];
 
+async function fileToDataUrl(file: File, maxW = 1280): Promise<string> {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((res, rej) => {
+      const i = new Image();
+      i.onload = () => res(i);
+      i.onerror = rej;
+      i.src = url;
+    });
+    const scale = Math.min(1, maxW / img.width);
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(img.width * scale);
+    canvas.height = Math.round(img.height * scale);
+    canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL("image/jpeg", 0.78);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initial, onSave, saveLabel, title }: Props) {
   const [desc, setDesc] = useState("");
   const [amount, setAmount] = useState<string>("");
@@ -37,6 +59,8 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
   const [participants, setParticipants] = useState<Set<string>>(new Set(group.members.map((m) => m.id)));
   const [splitValues, setSplitValues] = useState<Record<string, string>>({});
   const [note, setNote] = useState("");
+  const [billImage, setBillImage] = useState<string | undefined>();
+  const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (open) {
@@ -49,6 +73,7 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
         setParticipants(new Set(initial.splits.map((s) => s.memberId)));
         setSplitValues(Object.fromEntries(initial.splits.map((s) => [s.memberId, String(s.value)])));
         setNote(initial.note ?? "");
+        setBillImage(initial.billImage);
       } else {
         setDesc("");
         setAmount("");
@@ -58,6 +83,7 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
         setParticipants(new Set(group.members.map((m) => m.id)));
         setSplitValues({});
         setNote("");
+        setBillImage(undefined);
       }
     }
   }, [open, initial, defaultPaidBy, group.members]);
@@ -80,6 +106,19 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
     n.has(id) ? n.delete(id) : n.add(id);
     setParticipants(n);
   };
+  const allOn = () => setParticipants(new Set(group.members.map((m) => m.id)));
+  const allOff = () => setParticipants(new Set());
+
+  const handleFile = async (f?: File) => {
+    if (!f) return;
+    if (f.size > 8 * 1024 * 1024) { toast.error("Image too large (max 8 MB)"); return; }
+    try {
+      const data = await fileToDataUrl(f);
+      setBillImage(data);
+    } catch {
+      toast.error("Couldn't read image");
+    }
+  };
 
   const handleSave = () => {
     if (!canSave) return;
@@ -92,13 +131,14 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
       note: note.trim() || undefined,
       splitMode: mode,
       splits,
+      billImage,
     });
     onOpenChange(false);
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="w-[calc(100vw-2rem)] max-w-lg max-h-[90vh] overflow-y-auto p-4 sm:p-6">
         <DialogHeader>
           <DialogTitle>{title ?? "Add expense"}</DialogTitle>
         </DialogHeader>
@@ -109,7 +149,7 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
             <Input value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Dinner at beach shack" autoFocus />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <Label>Amount ({group.currency})</Label>
               <Input
@@ -157,15 +197,15 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
           </div>
 
           <div>
-            <div className="flex items-center justify-between">
-              <Label>Split</Label>
-              <div className="flex gap-1 rounded-lg bg-secondary p-1">
+            <div className="flex items-center justify-between gap-2">
+              <Label className="flex items-center gap-1.5"><Users className="h-3.5 w-3.5" /> Split among</Label>
+              <div className="flex flex-wrap items-center gap-1 rounded-lg bg-secondary p-1">
                 {MODES.map((m) => (
                   <button
                     key={m.id}
                     onClick={() => setMode(m.id)}
                     className={cn(
-                      "rounded-md px-2.5 py-1 text-xs font-medium",
+                      "rounded-md px-2 py-1 text-[11px] font-medium",
                       mode === m.id ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"
                     )}
                   >
@@ -174,7 +214,16 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
                 ))}
               </div>
             </div>
-            <div className="mt-2 space-y-1.5 rounded-xl border border-border p-2">
+            <div className="mt-1 flex items-center gap-2 text-[11px]">
+              <span className="text-muted-foreground">{participants.size} of {group.members.length} included</span>
+              <button onClick={allOn} className="ml-auto inline-flex items-center gap-1 rounded-md bg-secondary px-2 py-0.5 hover:bg-accent">
+                <UserCheck className="h-3 w-3" /> All
+              </button>
+              <button onClick={allOff} className="inline-flex items-center gap-1 rounded-md bg-secondary px-2 py-0.5 hover:bg-accent">
+                <UserX className="h-3 w-3" /> None
+              </button>
+            </div>
+            <div className="mt-2 space-y-1 rounded-xl border border-border p-2">
               {group.members.map((m) => {
                 const checked = participants.has(m.id);
                 const owed =
@@ -182,14 +231,20 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
                     ? computeShareAmount(amountNum, mode, splits, m.id)
                     : 0;
                 return (
-                  <div key={m.id} className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-secondary/50">
+                  <label
+                    key={m.id}
+                    className={cn(
+                      "flex items-center gap-2 rounded-lg px-2 py-1.5 cursor-pointer transition",
+                      checked ? "bg-primary/5" : "opacity-60 hover:opacity-100 hover:bg-secondary/50"
+                    )}
+                  >
                     <input
                       type="checkbox"
                       checked={checked}
                       onChange={() => toggleP(m.id)}
                       className="h-4 w-4 accent-[hsl(var(--primary))]"
                     />
-                    <span className="flex-1 text-sm">{m.name}</span>
+                    <span className="min-w-0 flex-1 truncate text-sm">{m.name}</span>
                     {checked && mode !== "equal" && (
                       <Input
                         inputMode="decimal"
@@ -198,15 +253,13 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
                           setSplitValues((sv) => ({ ...sv, [m.id]: e.target.value.replace(/[^\d.]/g, "") }))
                         }
                         placeholder={mode === "percent" ? "%" : mode === "exact" ? "amt" : "shares"}
-                        className="h-8 w-20 text-right text-sm"
+                        className="h-8 w-16 sm:w-20 text-right text-sm"
                       />
                     )}
-                    {checked && (
-                      <span className="w-20 text-right text-xs text-muted-foreground">
-                        {fmtMoney(owed, group.currency)}
-                      </span>
-                    )}
-                  </div>
+                    <span className={cn("w-16 sm:w-20 text-right text-xs tabular-nums", checked ? "text-foreground" : "text-muted-foreground line-through")}>
+                      {checked ? fmtMoney(owed, group.currency) : "excluded"}
+                    </span>
+                  </label>
                 );
               })}
             </div>
@@ -221,12 +274,43 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
           </div>
 
           <div>
+            <Label className="flex items-center gap-1.5"><ImageIcon className="h-3.5 w-3.5" /> Bill photo (optional)</Label>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              hidden
+              onChange={(e) => handleFile(e.target.files?.[0])}
+            />
+            {billImage ? (
+              <div className="relative mt-1 overflow-hidden rounded-xl border border-border">
+                <img src={billImage} alt="Bill" className="max-h-64 w-full object-contain bg-secondary" />
+                <button
+                  onClick={() => setBillImage(undefined)}
+                  className="absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-full bg-background/90 text-destructive shadow-card hover:bg-destructive/10"
+                  aria-label="Remove bill photo"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => fileRef.current?.click()}
+                className="mt-1 flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-border bg-secondary/30 px-3 py-3 text-xs font-medium text-muted-foreground hover:bg-secondary"
+              >
+                <Camera className="h-4 w-4" /> Attach bill photo
+              </button>
+            )}
+          </div>
+
+          <div>
             <Label>Note (optional)</Label>
             <Textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="Anything to remember…" />
           </div>
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="gap-2 sm:gap-2">
           <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button onClick={handleSave} disabled={!canSave}>{saveLabel ?? "Save"}</Button>
         </DialogFooter>
