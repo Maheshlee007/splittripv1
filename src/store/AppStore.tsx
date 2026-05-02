@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { customAlphabet, nanoid } from "nanoid";
 import { Expense, ExpenseRequest, Group, Member, Profile, Settlement, Split, SplitMode } from "@/lib/types";
-import { loadGroups, loadProfile, loadTheme, saveGroup, saveProfile, saveTheme, deleteGroup } from "@/lib/storage";
+import { loadGroups, loadProfile, loadTheme, saveGroup, saveProfile, saveTheme, deleteGroup, ThemePref } from "@/lib/storage";
 import { connectGroup, disconnectGroup, broadcastGroup, onRemoteGroup } from "@/lib/sync";
 
 const codeAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -11,7 +11,10 @@ interface AppStoreValue {
   ready: boolean;
   profile: Profile;
   setProfileFields: (p: Partial<Profile>) => void;
-  theme: "light" | "dark";
+  hasProfile: boolean;
+  themePref: ThemePref;
+  resolvedTheme: "light" | "dark";
+  setThemePref: (p: ThemePref) => void;
   toggleTheme: () => void;
   groups: Group[];
   getGroup: (id: string) => Group | undefined;
@@ -19,11 +22,14 @@ interface AppStoreValue {
   joinGroup: (code: string) => Group;
   removeGroup: (id: string) => void;
   updateGroup: (id: string, fn: (g: Group) => Group) => void;
+  importGroup: (g: Group) => void;
   /* member ops */
-  addMember: (groupId: string, name: string, upiId?: string) => Member;
+  addMember: (groupId: string, name: string, upiId?: string, phone?: string) => Member;
   updateMember: (groupId: string, memberId: string, patch: Partial<Member>) => void;
   removeMember: (groupId: string, memberId: string) => void;
   setRole: (groupId: string, memberId: string, role: Member["role"]) => void;
+  approveMember: (groupId: string, memberId: string) => void;
+  rejectMember: (groupId: string, memberId: string) => void;
   /* expense ops */
   addExpense: (groupId: string, e: Omit<Expense, "id" | "createdAt" | "updatedAt" | "createdBy">) => void;
   updateExpense: (groupId: string, e: Expense) => void;
@@ -47,19 +53,36 @@ function defaultProfile(): Profile {
 }
 
 function ensureMe(group: Group, profile: Profile): Group {
-  // make sure the local profile has a member entry tied to profile.id
   if (group.members.some((m) => m.id === profile.id)) return group;
-  const role: Member["role"] = group.ownerId === profile.id ? "owner" : "member";
+  // joining via sync — owner present? if so, mark me pending; else owner is me (shouldn't happen normally)
+  const isOwner = group.ownerId === profile.id;
+  const role: Member["role"] = isOwner ? "owner" : "member";
   return {
     ...group,
-    members: [...group.members, { id: profile.id, name: profile.name || "Me", upiId: profile.upiId, role }],
+    members: [
+      ...group.members,
+      {
+        id: profile.id,
+        name: profile.name || "Me",
+        upiId: profile.upiId,
+        phone: profile.phone,
+        role,
+        status: isOwner || !group.ownerId ? "active" : "pending",
+      },
+    ],
   };
+}
+
+function getSystemTheme(): "light" | "dark" {
+  if (typeof window === "undefined") return "light";
+  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
 export function AppStoreProvider({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
   const [profile, setProfile] = useState<Profile>(defaultProfile);
-  const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [themePref, setThemePrefState] = useState<ThemePref>("system");
+  const [systemTheme, setSystemTheme] = useState<"light" | "dark">(getSystemTheme);
   const [groups, setGroups] = useState<Group[]>([]);
   const [peers, setPeers] = useState<Record<string, number>>({});
   const groupsRef = useRef<Group[]>([]);
@@ -71,17 +94,28 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       const [p, t, gs] = await Promise.all([loadProfile(), loadTheme(), loadGroups()]);
       const prof = p ?? defaultProfile();
       setProfile(prof);
-      setTheme(t);
+      setThemePrefState(t);
       setGroups(gs);
       if (!p) await saveProfile(prof);
       setReady(true);
     })();
   }, []);
 
+  // system theme listener
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const handler = () => setSystemTheme(mq.matches ? "dark" : "light");
+    mq.addEventListener?.("change", handler);
+    return () => mq.removeEventListener?.("change", handler);
+  }, []);
+
+  const resolvedTheme: "light" | "dark" = themePref === "system" ? systemTheme : themePref;
+
   // theme apply
   useEffect(() => {
-    document.documentElement.classList.toggle("dark", theme === "dark");
-  }, [theme]);
+    document.documentElement.classList.toggle("dark", resolvedTheme === "dark");
+  }, [resolvedTheme]);
 
   // sync wiring per group
   useEffect(() => {
@@ -92,7 +126,6 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
         onPeers: (n) => setPeers((p) => ({ ...p, [g.id]: n })),
       });
     }
-    // cleanup happens on unmount only; we don't disconnect on group list churn here.
     return () => {
       for (const id of ids) disconnectGroup(id);
     };
@@ -104,7 +137,6 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
     const off = onRemoteGroup((incoming) => {
       setGroups((curr) => {
         const idx = curr.findIndex((g) => g.id === incoming.id);
-        // last-write-wins by max(updatedAt of children) — simplistic but works since y-webrtc gives full doc
         if (idx === -1) {
           const merged = ensureMe(incoming, profile);
           saveGroup(merged);
@@ -130,13 +162,17 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       setProfile((p) => {
         const next = { ...p, ...patch };
         saveProfile(next);
-        // propagate name/upi to my member entries in all groups
         setGroups((curr) =>
           curr.map((g) => {
             const i = g.members.findIndex((m) => m.id === next.id);
             if (i === -1) return g;
             const ng = { ...g, members: [...g.members] };
-            ng.members[i] = { ...ng.members[i], name: next.name || ng.members[i].name, upiId: next.upiId };
+            ng.members[i] = {
+              ...ng.members[i],
+              name: next.name || ng.members[i].name,
+              upiId: next.upiId,
+              phone: next.phone,
+            };
             persist(ng);
             return ng;
           })
@@ -147,9 +183,15 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
     [persist]
   );
 
+  const setThemePref = useCallback((p: ThemePref) => {
+    setThemePrefState(p);
+    saveTheme(p);
+  }, []);
+
   const toggleTheme = useCallback(() => {
-    setTheme((t) => {
-      const next = t === "light" ? "dark" : "light";
+    // cycle: light -> dark -> system -> light
+    setThemePrefState((t) => {
+      const next: ThemePref = t === "light" ? "dark" : t === "dark" ? "system" : "light";
       saveTheme(next);
       return next;
     });
@@ -167,7 +209,14 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
         currency,
         createdAt: Date.now(),
         ownerId: profile.id,
-        members: [{ id: profile.id, name: profile.name || "Me", upiId: profile.upiId, role: "owner" }],
+        members: [{
+          id: profile.id,
+          name: profile.name || "Me",
+          upiId: profile.upiId,
+          phone: profile.phone,
+          role: "owner",
+          status: "active",
+        }],
         expenses: [],
         requests: [],
         settlements: [],
@@ -184,7 +233,6 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       const id = code.toUpperCase().trim();
       const existing = groupsRef.current.find((g) => g.id === id);
       if (existing) return existing;
-      // create stub; sync will fill it in
       const g: Group = {
         id,
         name: `Trip ${id}`,
@@ -192,7 +240,14 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
         currency: "INR",
         createdAt: Date.now(),
         ownerId: "",
-        members: [{ id: profile.id, name: profile.name || "Me", upiId: profile.upiId, role: "member" }],
+        members: [{
+          id: profile.id,
+          name: profile.name || "Me",
+          upiId: profile.upiId,
+          phone: profile.phone,
+          role: "member",
+          status: "pending",
+        }],
         expenses: [],
         requests: [],
         settlements: [],
@@ -203,6 +258,19 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
     },
     [profile, persist]
   );
+
+  const importGroup = useCallback((g: Group) => {
+    setGroups((curr) => {
+      const i = curr.findIndex((x) => x.id === g.id);
+      const merged = ensureMe(g, profile);
+      saveGroup(merged);
+      broadcastGroup(merged);
+      if (i === -1) return [...curr, merged];
+      const next = [...curr];
+      next[i] = merged;
+      return next;
+    });
+  }, [profile]);
 
   const removeGroup = useCallback((id: string) => {
     disconnectGroup(id);
@@ -225,8 +293,8 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
   );
 
   const addMember = useCallback(
-    (groupId: string, name: string, upiId?: string): Member => {
-      const m: Member = { id: nanoid(), name: name.trim() || "Member", upiId, role: "member" };
+    (groupId: string, name: string, upiId?: string, phone?: string): Member => {
+      const m: Member = { id: nanoid(), name: name.trim() || "Member", upiId, phone, role: "member", status: "active" };
       updateGroup(groupId, (g) => ({ ...g, members: [...g.members, m] }));
       return m;
     },
@@ -256,6 +324,14 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
     },
     [updateMember]
   );
+
+  const approveMember = useCallback((groupId: string, memberId: string) => {
+    updateMember(groupId, memberId, { status: "active" });
+  }, [updateMember]);
+
+  const rejectMember = useCallback((groupId: string, memberId: string) => {
+    removeMember(groupId, memberId);
+  }, [removeMember]);
 
   const addExpense = useCallback<AppStoreValue["addExpense"]>(
     (groupId, e) => {
@@ -357,12 +433,17 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
     [profile.id]
   );
 
+  const hasProfile = !!profile.name?.trim();
+
   const value = useMemo<AppStoreValue>(
     () => ({
       ready,
       profile,
       setProfileFields,
-      theme,
+      hasProfile,
+      themePref,
+      resolvedTheme,
+      setThemePref,
       toggleTheme,
       groups,
       getGroup,
@@ -370,10 +451,13 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       joinGroup,
       removeGroup,
       updateGroup,
+      importGroup,
       addMember,
       updateMember,
       removeMember,
       setRole,
+      approveMember,
+      rejectMember,
       addExpense,
       updateExpense,
       removeExpense,
@@ -386,9 +470,10 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       myRole,
     }),
     [
-      ready, profile, setProfileFields, theme, toggleTheme, groups, getGroup,
-      createGroup, joinGroup, removeGroup, updateGroup, addMember, updateMember,
-      removeMember, setRole, addExpense, updateExpense, removeExpense,
+      ready, profile, setProfileFields, hasProfile, themePref, resolvedTheme, setThemePref, toggleTheme,
+      groups, getGroup, createGroup, joinGroup, removeGroup, updateGroup, importGroup,
+      addMember, updateMember, removeMember, setRole, approveMember, rejectMember,
+      addExpense, updateExpense, removeExpense,
       submitRequest, approveRequest, rejectRequest, addSettlement, peers, myMemberId, myRole,
     ]
   );
