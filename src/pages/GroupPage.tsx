@@ -22,7 +22,7 @@ export default function GroupPage() {
   const { id } = useParams();
   const [params] = useSearchParams();
   const nav = useNavigate();
-  const { getGroup, peers, addExpense, submitRequest, removeGroup, myRole } = useApp();
+  const { getGroup, peers, addExpense, submitRequest, removeGroup, myRole, profile } = useApp();
   const group = id ? getGroup(id) : undefined;
   const [addOpen, setAddOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
@@ -39,7 +39,6 @@ export default function GroupPage() {
   const live = (peers[group.id] ?? 0) > 0;
   const role = myRole(group.id);
   const isAdmin = role === "owner" || role === "admin";
-  const { profile } = useApp();
   const selfMember = group.members.find((m) => m.id === profile.id);
   const selfPending = selfMember?.status === "pending";
 
