@@ -241,7 +241,10 @@ export default function TripsPage() {
                     <div className="flex items-center gap-3">
                       <div className="grid h-12 w-12 place-items-center rounded-xl bg-accent text-2xl">{g.emoji}</div>
                       <div className="min-w-0">
-                        <h3 className="truncate font-semibold">{g.name}</h3>
+                        <h3 className="flex items-center gap-1.5 truncate font-semibold">
+                          {g.name}
+                          {g.archived && <span className="rounded-md bg-secondary px-1.5 py-0.5 text-[9px] font-medium uppercase text-muted-foreground">archived</span>}
+                        </h3>
                         <p className="text-xs text-muted-foreground">
                           {g.members.length} member{g.members.length === 1 ? "" : "s"} · {relativeTime(g.createdAt)}
                         </p>
