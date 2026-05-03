@@ -6,10 +6,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Plus, Crown, Shield, User as UserIcon, Trash2, Check, X, Clock } from "lucide-react";
+import { useConfirm } from "./ConfirmDialog";
 import { toast } from "sonner";
 
 export function MembersList({ group }: { group: Group }) {
   const { addMember, removeMember, setRole, profile, myRole, approveMember, rejectMember } = useApp();
+  const confirm = useConfirm();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -54,7 +56,10 @@ export function MembersList({ group }: { group: Group }) {
               </div>
               {isOwner ? (
                 <>
-                  <Button size="sm" variant="ghost" className="h-7 gap-1 text-destructive" onClick={() => { if (confirm(`Reject ${m.name}?`)) { rejectMember(group.id, m.id); toast("Removed"); } }}>
+                  <Button size="sm" variant="ghost" className="h-7 gap-1 text-destructive" onClick={async () => {
+                    const ok = await confirm({ title: `Reject ${m.name}?`, description: "They won't be added to this trip.", confirmText: "Reject", destructive: true });
+                    if (ok) { rejectMember(group.id, m.id); toast("Removed"); }
+                  }}>
                     <X className="h-3.5 w-3.5" />
                   </Button>
                   <Button size="sm" className="h-7 gap-1" onClick={() => { approveMember(group.id, m.id); toast.success(`${m.name} approved`); }}>
