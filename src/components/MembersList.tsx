@@ -145,8 +145,14 @@ export function MembersList({ group }: { group: Group }) {
                 </button>
                 {canManage && !isMe && !isGroupOwner && (
                   <button
-                    onClick={() => {
-                      if (confirm(`Remove ${m.name}?`)) removeMember(group.id, m.id);
+                    onClick={async () => {
+                      const ok = await confirm({
+                        title: `Remove ${m.name}?`,
+                        description: "Their splits will be cleaned up. Past expenses they paid will be reassigned to the trip owner.",
+                        confirmText: "Remove",
+                        destructive: true,
+                      });
+                      if (ok) removeMember(group.id, m.id);
                     }}
                     className="grid h-7 w-7 place-items-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                   >

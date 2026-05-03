@@ -8,9 +8,11 @@ import { Trash2, Pencil, Receipt, Image as ImageIcon } from "lucide-react";
 import { ExpenseDialog } from "./ExpenseDialog";
 import { EmptyState } from "./EmptyState";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { useConfirm } from "./ConfirmDialog";
 
 export function ExpensesList({ group }: { group: Group }) {
   const { profile, myRole, removeExpense, updateExpense } = useApp();
+  const confirm = useConfirm();
   const [editing, setEditing] = useState<Expense | null>(null);
   const [viewBill, setViewBill] = useState<string | null>(null);
   const role = myRole(group.id);
@@ -85,7 +87,10 @@ export function ExpensesList({ group }: { group: Group }) {
                     )}
                     {canDelete && (
                       <button
-                        onClick={() => { if (confirm("Delete this expense?")) removeExpense(group.id, e.id); }}
+                        onClick={async () => {
+                          const ok = await confirm({ title: "Delete this expense?", confirmText: "Delete", destructive: true });
+                          if (ok) removeExpense(group.id, e.id);
+                        }}
                         className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                       >
                         <Trash2 className="h-3 w-3" /> Delete
