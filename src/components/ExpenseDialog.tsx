@@ -88,7 +88,16 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
     }
   }, [open, initial, defaultPaidBy, group.members]);
 
-  const amountNum = parseFloat(amount) || 0;
+  // Reconcile when members are removed mid-edit (or sync brings change)
+  useEffect(() => {
+    if (!open) return;
+    const ids = new Set(group.members.map((m) => m.id));
+    setParticipants((prev) => {
+      const next = new Set([...prev].filter((id) => ids.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+    setPaidBy((p) => (ids.has(p) ? p : group.members[0]?.id ?? ""));
+  }, [open, group.members]);
 
   const splits: Split[] = useMemo(() => {
     return [...participants].map((id) => ({ memberId: id, value: parseFloat(splitValues[id] ?? "1") || (mode === "equal" ? 0 : 1) }));
