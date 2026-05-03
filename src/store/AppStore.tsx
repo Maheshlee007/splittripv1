@@ -21,6 +21,7 @@ interface AppStoreValue {
   createGroup: (name: string, emoji: string, currency: string) => Group;
   joinGroup: (code: string) => Group;
   removeGroup: (id: string) => void;
+  setArchived: (id: string, archived: boolean) => void;
   updateGroup: (id: string, fn: (g: Group) => Group) => void;
   importGroup: (g: Group) => void;
   /* member ops */
@@ -313,10 +314,38 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
 
   const removeMember = useCallback(
     (groupId: string, memberId: string) => {
-      updateGroup(groupId, (g) => ({ ...g, members: g.members.filter((m) => m.id !== memberId) }));
+      updateGroup(groupId, (g) => {
+        const ownerId = g.ownerId || g.members[0]?.id;
+        // Drop member from splits, drop expenses where they were sole participant,
+        // and reassign paidBy to owner if their expense lingers.
+        const expenses = g.expenses
+          .map((e) => {
+            const splits = e.splits.filter((s) => s.memberId !== memberId);
+            const paidBy = e.paidBy === memberId ? ownerId : e.paidBy;
+            return { ...e, splits, paidBy, updatedAt: Date.now() };
+          })
+          .filter((e) => e.splits.length > 0);
+        const settlements = g.settlements.filter(
+          (s) => s.fromId !== memberId && s.toId !== memberId
+        );
+        const requests = g.requests.filter(
+          (r) => r.expense.paidBy !== memberId && r.requestedBy !== memberId
+        );
+        return {
+          ...g,
+          members: g.members.filter((m) => m.id !== memberId),
+          expenses,
+          settlements,
+          requests,
+        };
+      });
     },
     [updateGroup]
   );
+
+  const setArchived = useCallback((id: string, archived: boolean) => {
+    updateGroup(id, (g) => ({ ...g, archived, archivedAt: archived ? Date.now() : undefined }));
+  }, [updateGroup]);
 
   const setRole = useCallback(
     (groupId: string, memberId: string, role: Member["role"]) => {
@@ -450,6 +479,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       createGroup,
       joinGroup,
       removeGroup,
+      setArchived,
       updateGroup,
       importGroup,
       addMember,
@@ -471,7 +501,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
     }),
     [
       ready, profile, setProfileFields, hasProfile, themePref, resolvedTheme, setThemePref, toggleTheme,
-      groups, getGroup, createGroup, joinGroup, removeGroup, updateGroup, importGroup,
+      groups, getGroup, createGroup, joinGroup, removeGroup, setArchived, updateGroup, importGroup,
       addMember, updateMember, removeMember, setRole, approveMember, rejectMember,
       addExpense, updateExpense, removeExpense,
       submitRequest, approveRequest, rejectRequest, addSettlement, peers, myMemberId, myRole,

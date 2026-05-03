@@ -67,6 +67,8 @@ export interface Group {
   budget?: number;
   createdAt: number;
   ownerId: string;
+  archived?: boolean;
+  archivedAt?: number;
   members: Member[];
   expenses: Expense[];
   requests: ExpenseRequest[];

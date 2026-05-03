@@ -1,6 +1,6 @@
 import { useState, useRef } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { Plus, Share2, Wifi, WifiOff, Trash2, FileSpreadsheet, FileText, MessageCircle, Image as ImageIcon, MoreVertical, FileJson, BarChart3 } from "lucide-react";
+import { Plus, Share2, Wifi, WifiOff, Trash2, FileSpreadsheet, FileText, MessageCircle, Image as ImageIcon, MoreVertical, FileJson, BarChart3, Archive, ArchiveRestore, Eye } from "lucide-react";
 import { useApp } from "@/store/AppStore";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -12,21 +12,27 @@ import { MembersList } from "@/components/MembersList";
 import { DashboardView } from "@/components/DashboardView";
 import { ExpenseDialog } from "@/components/ExpenseDialog";
 import { ShareCodeDialog } from "@/components/ShareCodeDialog";
+import { ExportPreview } from "@/components/ExportPreview";
 import { totalSpent } from "@/lib/balances";
 import { fmtMoney } from "@/lib/format";
-import { exportExcel, exportPDF, shareWhatsApp, exportImage, exportJSON } from "@/lib/exports";
+import { exportExcel } from "@/lib/exports";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { useConfirm } from "@/components/ConfirmDialog";
 import { toast } from "sonner";
+
+type PreviewKind = "pdf" | "json" | "whatsapp" | "image" | null;
 
 export default function GroupPage() {
   const { id } = useParams();
   const [params] = useSearchParams();
   const nav = useNavigate();
-  const { getGroup, peers, addExpense, submitRequest, removeGroup, myRole, profile } = useApp();
+  const { getGroup, peers, addExpense, submitRequest, removeGroup, setArchived, myRole, profile } = useApp();
+  const confirm = useConfirm();
   const group = id ? getGroup(id) : undefined;
   const [addOpen, setAddOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
-  const balRef = useRef<HTMLDivElement>(null);
+  const [preview, setPreview] = useState<PreviewKind>(null);
+  const dashRef = useRef<HTMLDivElement>(null);
 
   if (!group) {
     return (
@@ -43,20 +49,11 @@ export default function GroupPage() {
   const selfPending = selfMember?.status === "pending";
 
   const handleAdd = (payload: Parameters<typeof addExpense>[1]) => {
+    if (group.archived) { toast.error("Trip is archived"); return; }
     if (isAdmin) addExpense(group.id, payload);
     else {
       submitRequest(group.id, payload);
       toast.success("Request sent to admin");
-    }
-  };
-
-  const handleExportImage = async () => {
-    if (!balRef.current) return;
-    try {
-      await exportImage(balRef.current, `${group.name}_balances.png`);
-      toast.success("Image saved");
-    } catch {
-      toast.error("Couldn't export image");
     }
   };
 
@@ -66,7 +63,7 @@ export default function GroupPage() {
     <>
       <PageHeader
         back="/"
-        title={`${group.emoji} ${group.name}`}
+        title={`${group.emoji} ${group.name}${group.archived ? " · archived" : ""}`}
         subtitle={
           <span className="flex items-center gap-1">
             {live ? <Wifi className="h-3 w-3 text-success" /> : <WifiOff className="h-3 w-3" />}
@@ -84,24 +81,43 @@ export default function GroupPage() {
               <DropdownMenuTrigger asChild>
                 <Button size="sm" variant="ghost"><MoreVertical className="h-4 w-4" /></Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuContent align="end" className="w-56">
                 <DropdownMenuItem onClick={() => exportExcel(group)}><FileSpreadsheet className="h-4 w-4" /> Export Excel</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => exportPDF(group)}><FileText className="h-4 w-4" /> Export PDF</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => exportJSON(group)}><FileJson className="h-4 w-4" /> Export JSON (re-importable)</DropdownMenuItem>
-                <DropdownMenuItem onClick={async () => { await shareWhatsApp(group); toast.success("Shared / copied"); }}>
-                  <MessageCircle className="h-4 w-4" /> Share to WhatsApp
+                <DropdownMenuItem onClick={() => setPreview("pdf")}><FileText className="h-4 w-4" /> Preview PDF <Eye className="ml-auto h-3.5 w-3.5 text-muted-foreground" /></DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setPreview("json")}><FileJson className="h-4 w-4" /> Preview JSON <Eye className="ml-auto h-3.5 w-3.5 text-muted-foreground" /></DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setPreview("whatsapp")}>
+                  <MessageCircle className="h-4 w-4" /> WhatsApp text <Eye className="ml-auto h-3.5 w-3.5 text-muted-foreground" />
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={handleExportImage}><ImageIcon className="h-4 w-4" /> Save balances as image</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setPreview("image")}><ImageIcon className="h-4 w-4" /> Dashboard image <Eye className="ml-auto h-3.5 w-3.5 text-muted-foreground" /></DropdownMenuItem>
                 {role === "owner" && (
                   <>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
+                      onClick={async () => {
+                        const next = !group.archived;
+                        const ok = await confirm({
+                          title: next ? "Archive this trip?" : "Restore this trip?",
+                          description: next
+                            ? "Archived trips become read-only. You can restore later."
+                            : "The trip becomes editable again.",
+                          confirmText: next ? "Archive" : "Restore",
+                        });
+                        if (ok) { setArchived(group.id, next); toast.success(next ? "Archived" : "Restored"); }
+                      }}
+                    >
+                      {group.archived ? <ArchiveRestore className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
+                      {group.archived ? "Restore trip" : "Archive trip"}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
                       className="text-destructive focus:text-destructive"
-                      onClick={() => {
-                        if (confirm("Delete this trip locally? Other peers keep their copy.")) {
-                          removeGroup(group.id);
-                          nav("/");
-                        }
+                      onClick={async () => {
+                        const ok = await confirm({
+                          title: "Delete this trip locally?",
+                          description: "Other peers keep their copy. This cannot be undone on this device.",
+                          confirmText: "Delete",
+                          destructive: true,
+                        });
+                        if (ok) { removeGroup(group.id); nav("/"); }
                       }}
                     >
                       <Trash2 className="h-4 w-4" /> Delete trip
@@ -118,6 +134,11 @@ export default function GroupPage() {
         {selfPending && (
           <div className="mb-3 rounded-xl border border-warning/30 bg-warning/5 p-3 text-xs text-warning">
             ⏳ Waiting for the trip owner to approve your join request. You'll see live updates once approved.
+          </div>
+        )}
+        {group.archived && (
+          <div className="mb-3 rounded-xl border border-border bg-secondary/40 p-3 text-xs text-muted-foreground">
+            🗄️ This trip is archived and read-only.
           </div>
         )}
 
@@ -163,12 +184,10 @@ export default function GroupPage() {
             <ExpensesList group={group} />
           </TabsContent>
           <TabsContent value="balances" className="pt-4">
-            <div ref={balRef} className="rounded-2xl bg-background p-1">
-              <BalancesView group={group} />
-            </div>
+            <BalancesView group={group} />
           </TabsContent>
           <TabsContent value="dashboard" className="pt-4">
-            <DashboardView group={group} />
+            <DashboardView ref={dashRef} group={group} />
           </TabsContent>
           <TabsContent value="requests" className="pt-4">
             <RequestsList group={group} />
@@ -179,8 +198,7 @@ export default function GroupPage() {
         </Tabs>
       </div>
 
-      {/* FAB */}
-      {!selfPending && (
+      {!selfPending && !group.archived && (
         <button
           onClick={() => setAddOpen(true)}
           className="fixed bottom-24 right-4 z-30 grid h-14 w-14 place-items-center rounded-2xl gradient-primary text-primary-foreground shadow-elevated transition-transform active:scale-95 md:bottom-6"
@@ -199,6 +217,13 @@ export default function GroupPage() {
         onSave={handleAdd}
       />
       <ShareCodeDialog open={shareOpen} onOpenChange={setShareOpen} code={group.id} groupName={group.name} />
+      <ExportPreview
+        open={!!preview}
+        onOpenChange={(v) => !v && setPreview(null)}
+        group={group}
+        kind={preview}
+        imageNode={dashRef.current}
+      />
     </>
   );
 }
