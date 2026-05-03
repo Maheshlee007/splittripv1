@@ -99,6 +99,8 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
     setPaidBy((p) => (ids.has(p) ? p : group.members[0]?.id ?? ""));
   }, [open, group.members]);
 
+  const amountNum = parseFloat(amount) || 0;
+
   const splits: Split[] = useMemo(() => {
     return [...participants].map((id) => ({ memberId: id, value: parseFloat(splitValues[id] ?? "1") || (mode === "equal" ? 0 : 1) }));
   }, [participants, splitValues, mode]);
