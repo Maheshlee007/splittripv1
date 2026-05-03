@@ -49,7 +49,7 @@ export function exportExcel(g: Group): void {
   XLSX.writeFile(wb, `${g.name.replace(/[^\w]+/g, "_")}_${g.id}.xlsx`);
 }
 
-export function exportPDF(g: Group): void {
+function buildPDF(g: Group): jsPDF {
   const doc = new jsPDF();
   doc.setFontSize(18);
   doc.text(`${g.emoji} ${g.name}`, 14, 18);
@@ -93,8 +93,20 @@ export function exportPDF(g: Group): void {
       headStyles: { fillColor: [59, 130, 246] },
     });
   }
+  return doc;
+}
 
-  doc.save(`${g.name.replace(/[^\w]+/g, "_")}_${g.id}.pdf`);
+export function exportPDF(g: Group): void {
+  buildPDF(g).save(`${g.name.replace(/[^\w]+/g, "_")}_${g.id}.pdf`);
+}
+
+export function buildPDFBlobUrl(g: Group): string {
+  const blob = buildPDF(g).output("blob");
+  return URL.createObjectURL(blob);
+}
+
+export function buildJSONString(g: Group): string {
+  return JSON.stringify(g, null, 2);
 }
 
 export function buildWhatsAppText(g: Group): string {
