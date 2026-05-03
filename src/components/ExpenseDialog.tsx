@@ -313,6 +313,9 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
                 <Camera className="h-4 w-4" /> Attach bill photo
               </button>
             )}
+            <p className="mt-1 text-[10px] text-muted-foreground">
+              Stored locally on this device & synced peer-to-peer. For backup, export the trip as JSON from the menu.
+            </p>
           </div>
 
           <div>
