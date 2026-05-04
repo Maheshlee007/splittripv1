@@ -130,7 +130,7 @@ export default function GroupPage() {
         }
       />
 
-      <div className="mx-auto max-w-3xl px-4 pt-4">
+      <div className="mx-auto max-w-3xl px-4 pt-4 pb-32 md:pb-12">
         {selfPending && (
           <div className="mb-3 rounded-xl border border-warning/30 bg-warning/5 p-3 text-xs text-warning">
             ⏳ Waiting for the trip owner to approve your join request. You'll see live updates once approved.

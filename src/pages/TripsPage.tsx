@@ -209,6 +209,7 @@ export default function TripsPage() {
       />
 
       <div className="mx-auto max-w-3xl px-4 py-4">
+        <BackupReminderBanner show={hasProfile} />
         {groups.length === 0 ? (
           <EmptyState
             icon={<Users className="h-7 w-7" />}
@@ -226,54 +227,87 @@ export default function TripsPage() {
             }
           />
         ) : (
-          <div className="grid gap-3 sm:grid-cols-2">
-            {groups.map((g) => {
-              const total = totalSpent(g);
-              const live = (peers[g.id] ?? 0) > 0;
-              return (
-                <Card
-                  key={g.id}
-                  onClick={() => nav(`/trip/${g.id}`)}
-                  className="group relative cursor-pointer overflow-hidden border-border/60 p-4 shadow-card transition-all hover:-translate-y-0.5 hover:shadow-elevated"
-                >
-                  <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-primary/0 via-primary/60 to-primary/0 opacity-0 transition-opacity group-hover:opacity-100" />
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <div className="grid h-12 w-12 place-items-center rounded-xl bg-accent text-2xl">{g.emoji}</div>
-                      <div className="min-w-0">
-                        <h3 className="flex items-center gap-1.5 truncate font-semibold">
-                          {g.name}
-                          {g.archived && <span className="rounded-md bg-secondary px-1.5 py-0.5 text-[9px] font-medium uppercase text-muted-foreground">archived</span>}
-                        </h3>
-                        <p className="text-xs text-muted-foreground">
-                          {g.members.length} member{g.members.length === 1 ? "" : "s"} · {relativeTime(g.createdAt)}
-                        </p>
-                      </div>
-                    </div>
-                    <span
-                      className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                        live ? "bg-success/15 text-success" : "bg-muted text-muted-foreground"
-                      }`}
-                    >
-                      {live ? <Wifi className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />}
-                      {live ? `${peers[g.id]}` : "offline"}
-                    </span>
-                  </div>
-                  <div className="mt-3 flex items-end justify-between">
-                    <div>
-                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Spent</p>
-                      <p className="text-lg font-semibold tabular-nums">{fmtMoney(total, g.currency)}</p>
-                    </div>
-                    <code className="rounded-md bg-secondary px-2 py-1 text-[11px] font-mono tracking-wider">
-                      {g.id}
-                    </code>
-                  </div>
-                </Card>
-              );
-            })}
-          </div>
+          <TripGrids groups={groups} peers={peers} nav={nav} />
         )}
       </div>
     </>
+  );
+}
+
+function TripGrids({ groups, peers, nav }: { groups: any[]; peers: Record<string, number>; nav: (p: string) => void }) {
+  const active = groups.filter((g) => !g.archived);
+  const archived = groups.filter((g) => g.archived);
+  return (
+    <div className="space-y-6">
+      {active.length > 0 && (
+        <section>
+          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Active ({active.length})</h2>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {active.map((g) => <TripCard key={g.id} g={g} live={(peers[g.id] ?? 0) > 0} peerCount={peers[g.id] ?? 0} onClick={() => nav(`/trip/${g.id}`)} />)}
+          </div>
+        </section>
+      )}
+      {archived.length > 0 && (
+        <section>
+          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Archived ({archived.length})</h2>
+          <div className="grid gap-3 sm:grid-cols-2 opacity-80">
+            {archived.map((g) => <TripCard key={g.id} g={g} live={false} peerCount={0} onClick={() => nav(`/trip/${g.id}`)} />)}
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
+function TripCard({ g, live, peerCount, onClick }: { g: any; live: boolean; peerCount: number; onClick: () => void }) {
+  const total = totalSpent(g);
+  return (
+    <Card
+      onClick={onClick}
+      className="group relative cursor-pointer overflow-hidden border-border/60 p-4 shadow-card transition-all hover:-translate-y-0.5 hover:shadow-elevated"
+    >
+      <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-primary/0 via-primary/60 to-primary/0 opacity-0 transition-opacity group-hover:opacity-100" />
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="grid h-12 w-12 place-items-center rounded-xl bg-accent text-2xl">{g.emoji}</div>
+          <div className="min-w-0">
+            <h3 className="flex items-center gap-1.5 truncate font-semibold">
+              {g.name}
+              {g.archived && <span className="rounded-md bg-secondary px-1.5 py-0.5 text-[9px] font-medium uppercase text-muted-foreground">archived</span>}
+            </h3>
+            <p className="text-xs text-muted-foreground">
+              {g.members.length} member{g.members.length === 1 ? "" : "s"} · {relativeTime(g.createdAt)}
+            </p>
+          </div>
+        </div>
+        <span className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${live ? "bg-success/15 text-success" : "bg-muted text-muted-foreground"}`}>
+          {live ? <Wifi className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />}
+          {live ? `${peerCount}` : "offline"}
+        </span>
+      </div>
+      <div className="mt-3 flex items-end justify-between">
+        <div>
+          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Spent</p>
+          <p className="text-lg font-semibold tabular-nums">{fmtMoney(total, g.currency)}</p>
+        </div>
+        <code className="rounded-md bg-secondary px-2 py-1 text-[11px] font-mono tracking-wider">{g.id}</code>
+      </div>
+    </Card>
+  );
+}
+
+function BackupReminderBanner({ show }: { show: boolean }) {
+  const KEY = "splittrip:backup-hint-dismissed";
+  const [open, setOpen] = useState(() => show && typeof localStorage !== "undefined" && !localStorage.getItem(KEY));
+  if (!open) return null;
+  return (
+    <div className="mb-4 flex items-start gap-3 rounded-2xl border border-warning/40 bg-warning/5 p-3 text-xs text-warning">
+      <span className="mt-0.5">💾</span>
+      <div className="min-w-0 flex-1">
+        <p className="font-medium">Take a backup before clearing app data.</p>
+        <p className="mt-0.5 opacity-90">Your trips live only on this device. Export a JSON backup from the Me tab any time.</p>
+      </div>
+      <button onClick={() => { try { localStorage.setItem(KEY, "1"); } catch {} setOpen(false); }} className="text-warning/70 hover:text-warning">✕</button>
+    </div>
   );
 }

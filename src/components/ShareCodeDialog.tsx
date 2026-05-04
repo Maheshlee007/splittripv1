@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import QRCode from "qrcode";
-import { Copy, Check, Link2 } from "lucide-react";
+import { Copy, Check, Link2, QrCode } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { QRHandshakeDialog } from "./QRHandshakeDialog";
 import { toast } from "sonner";
 
 export function ShareCodeDialog({
@@ -18,6 +19,7 @@ export function ShareCodeDialog({
 }) {
   const [qr, setQr] = useState<string>("");
   const [copied, setCopied] = useState<"code" | "link" | null>(null);
+  const [handshake, setHandshake] = useState(false);
 
   const url = typeof window !== "undefined" ? `${window.location.origin}/?join=${code}` : `/?join=${code}`;
 
@@ -81,7 +83,11 @@ export function ShareCodeDialog({
             Anyone who opens the link auto-joins. The owner approves their entry from the Members tab.
           </p>
           <Button onClick={share} className="w-full">Share invite</Button>
+          <Button variant="secondary" className="w-full gap-1.5" onClick={() => setHandshake(true)}>
+            <QrCode className="h-4 w-4" /> Connect via QR (offline fallback)
+          </Button>
         </div>
+        <QRHandshakeDialog open={handshake} onOpenChange={setHandshake} groupId={code} />
       </DialogContent>
     </Dialog>
   );

@@ -1,10 +1,11 @@
-import { useState, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useApp } from "@/store/AppStore";
 import { PageHeader } from "@/components/PageHeader";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Sun, Moon, Monitor, Pencil, User, Phone, AtSign, CheckCircle2 } from "lucide-react";
+import { Sun, Moon, Monitor, Pencil, User, Phone, AtSign, CheckCircle2, Download, Upload, ShieldAlert } from "lucide-react";
+import { downloadBackup, restoreBackup } from "@/lib/backup";
 import { toast } from "sonner";
 
 export default function MePage() {
@@ -115,6 +116,8 @@ export default function MePage() {
           </p>
         </section>
 
+        <BackupSection />
+
         <section className="space-y-2 rounded-2xl border border-border bg-card p-5 shadow-card">
           <h3 className="text-sm font-semibold">About SplitTrip</h3>
           <p className="text-xs text-muted-foreground">
@@ -126,6 +129,49 @@ export default function MePage() {
         </section>
       </div>
     </>
+  );
+}
+
+function BackupSection() {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const handleFile = async (f?: File) => {
+    if (!f) return;
+    setBusy(true);
+    try {
+      const r = await restoreBackup(f);
+      toast.success(`Restored ${r.groups} trip${r.groups === 1 ? "" : "s"}. Refresh to see them.`);
+      setTimeout(() => window.location.reload(), 1200);
+    } catch (e: any) {
+      toast.error(e?.message || "Restore failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <section className="space-y-3 rounded-2xl border border-border bg-card p-5 shadow-card">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold">Backup &amp; restore</h3>
+      </div>
+      <div className="flex items-start gap-2 rounded-xl border border-warning/30 bg-warning/5 p-3 text-xs text-warning">
+        <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
+        <span>
+          Take a JSON backup before clearing app data, uninstalling, or switching browsers — local-first means data lives only on this device.
+        </span>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <Button onClick={() => downloadBackup()} disabled={busy} className="gap-1.5">
+          <Download className="h-4 w-4" /> Export all
+        </Button>
+        <input ref={fileRef} type="file" accept=".json,application/json" hidden onChange={(e) => handleFile(e.target.files?.[0])} />
+        <Button variant="secondary" onClick={() => fileRef.current?.click()} disabled={busy} className="gap-1.5">
+          <Upload className="h-4 w-4" /> Restore
+        </Button>
+      </div>
+      <p className="text-[10px] text-muted-foreground">
+        Backup includes your profile + every trip (members, expenses, requests, settlements, bill photos).
+      </p>
+    </section>
   );
 }
 
