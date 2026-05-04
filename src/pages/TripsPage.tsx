@@ -209,6 +209,7 @@ export default function TripsPage() {
       />
 
       <div className="mx-auto max-w-3xl px-4 py-4">
+        <BackupReminderBanner show={hasProfile} />
         {groups.length === 0 ? (
           <EmptyState
             icon={<Users className="h-7 w-7" />}
