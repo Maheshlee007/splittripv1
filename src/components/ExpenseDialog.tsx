@@ -234,7 +234,7 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
                 <UserX className="h-3 w-3" /> None
               </button>
             </div>
-            <div className="mt-2 space-y-1 rounded-xl border border-border p-2">
+            <div className="mt-2 max-h-64 space-y-1 overflow-y-auto rounded-xl border border-border p-2">
               {group.members.map((m) => {
                 const checked = participants.has(m.id);
                 const owed =
@@ -284,7 +284,8 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
             )}
           </div>
 
-          <div>
+          {/* Full-width: bill + note */}
+          <div className="md:col-span-2">
             <Label className="flex items-center gap-1.5"><ImageIcon className="h-3.5 w-3.5" /> Bill photo (optional)</Label>
             <input
               ref={fileRef}
@@ -318,7 +319,7 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
             </p>
           </div>
 
-          <div>
+          <div className="md:col-span-2">
             <Label>Note (optional)</Label>
             <Textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="Anything to remember…" />
           </div>
