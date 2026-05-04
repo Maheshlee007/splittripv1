@@ -59,7 +59,7 @@ export const DashboardView = forwardRef<HTMLDivElement, { group: Group }>(({ gro
 
       <section className="rounded-2xl border border-border bg-card p-3 shadow-card sm:p-4">
         <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-sm font-semibold">Daily breakdown</h3>
+          <h3 className="text-sm font-semibold">Trip breakdown</h3>
           <span className="text-[10px] text-muted-foreground">share per member · {group.currency}</span>
         </div>
         {rows.length === 0 ? (
@@ -119,13 +119,6 @@ export const DashboardView = forwardRef<HTMLDivElement, { group: Group }>(({ gro
                     for (const e of group.expenses) s += computeShareAmount(e.amount, e.splitMode, e.splits, m.id);
                     return <td key={m.id} className="px-2 py-2 text-right tabular-nums">{fmtMoney(s, group.currency)}</td>;
                   })}
-                </tr>
-                <tr className="bg-secondary/30 text-muted-foreground">
-                  <td colSpan={2} className="px-2 py-2 text-right">Total paid</td>
-                  <td className="px-2 py-2 text-right tabular-nums">{fmtMoney(total, group.currency)}</td>
-                  {activeMembers.map((m) => (
-                    <td key={m.id} className="px-2 py-2 text-right tabular-nums">{fmtMoney(memberSpent(group, m.id), group.currency)}</td>
-                  ))}
                 </tr>
               </tbody>
             </table>
