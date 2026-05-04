@@ -1,6 +1,6 @@
 import { forwardRef, useMemo } from "react";
 import { Group } from "@/lib/types";
-import { computeShareAmount, memberSpent, totalSpent } from "@/lib/balances";
+import { computeShareAmount, totalSpent } from "@/lib/balances";
 import { fmtMoney } from "@/lib/format";
 import { getCategory } from "@/lib/categories";
 import { TrendingUp, Users, Receipt, Wallet } from "lucide-react";
