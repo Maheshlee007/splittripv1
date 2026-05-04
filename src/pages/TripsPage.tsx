@@ -295,3 +295,19 @@ function TripCard({ g, live, peerCount, onClick }: { g: any; live: boolean; peer
     </Card>
   );
 }
+
+function BackupReminderBanner({ show }: { show: boolean }) {
+  const KEY = "splittrip:backup-hint-dismissed";
+  const [open, setOpen] = useState(() => show && typeof localStorage !== "undefined" && !localStorage.getItem(KEY));
+  if (!open) return null;
+  return (
+    <div className="mb-4 flex items-start gap-3 rounded-2xl border border-warning/40 bg-warning/5 p-3 text-xs text-warning">
+      <span className="mt-0.5">💾</span>
+      <div className="min-w-0 flex-1">
+        <p className="font-medium">Take a backup before clearing app data.</p>
+        <p className="mt-0.5 opacity-90">Your trips live only on this device. Export a JSON backup from the Me tab any time.</p>
+      </div>
+      <button onClick={() => { try { localStorage.setItem(KEY, "1"); } catch {} setOpen(false); }} className="text-warning/70 hover:text-warning">✕</button>
+    </div>
+  );
+}
