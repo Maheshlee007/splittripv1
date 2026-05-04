@@ -149,12 +149,12 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[calc(100vw-2rem)] max-w-lg max-h-[90vh] overflow-y-auto p-4 sm:p-6">
+      <DialogContent className="w-[calc(100vw-1.5rem)] max-w-3xl max-h-[92vh] overflow-y-auto p-4 sm:p-6">
         <DialogHeader>
           <DialogTitle>{title ?? "Add expense"}</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="grid gap-4 md:grid-cols-2">
           <div>
             <Label>Description</Label>
             <Input value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Dinner at beach shack" autoFocus />
