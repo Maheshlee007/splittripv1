@@ -231,6 +231,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
         expenses: [],
         requests: [],
         settlements: [],
+        activity: [activity(profile, "member", "created the trip")],
       };
       setGroups((curr) => [...curr, g]);
       persist(g);
@@ -262,6 +263,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
         expenses: [],
         requests: [],
         settlements: [],
+        activity: [activity(profile, "join", "requested to join the trip")],
       };
       setGroups((curr) => [...curr, g]);
       persist(g);
