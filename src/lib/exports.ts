@@ -3,7 +3,7 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { toPng } from "html-to-image";
 import { Group } from "./types";
-import { computeBalances, computeShareAmount, simplifyDebts, totalSpent } from "./balances";
+import { buildExpenseBreakdownRows, buildMemberLedger, computeShareAmount, totalSpent } from "./balances";
 import { fmtDate, fmtMoney } from "./format";
 import { getCategory } from "./categories";
 
@@ -38,13 +38,18 @@ export function exportExcel(g: Group): void {
   ];
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(expRows), "Expenses");
 
-  const net = computeBalances(g);
-  const balRows = [["Member", `Net (${g.currency})`], ...g.members.map((m) => [m.name, net[m.id] ?? 0])];
+  const ledger = buildMemberLedger(g);
+  const balRows = [["Member", "Individual spent", "Share", "Balance", `Final (${g.currency})`], ...ledger.map((r) => [r.name, r.paid, r.owed, r.balance, r.finalBalance])];
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(balRows), "Balances");
 
-  const transfers = simplifyDebts(net);
-  const tRows = [["From", "To", `Amount (${g.currency})`], ...transfers.map((t) => [memberName(g, t.fromId), memberName(g, t.toId), t.amount])];
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(tRows), "Settle up");
+  const active = g.members.filter((m) => m.status !== "pending");
+  const matrix = [["Date", "Category / desc", `Total (${g.currency})`, ...active.map((m) => m.name)],
+    ...buildExpenseBreakdownRows(g).map((r) => [fmtDate(r.date), `${getCategory(r.category).label} - ${r.description}`, r.total, ...active.map((m) => r.shares[m.id] ?? 0)]),
+    ["", "Spent per person", totalSpent(g), ...active.map((m) => -(ledger.find((r) => r.memberId === m.id)?.owed ?? 0))],
+    ["", "Individual spent", "", ...active.map((m) => ledger.find((r) => r.memberId === m.id)?.paid ?? 0)],
+    ["", "Balances", "", ...active.map((m) => ledger.find((r) => r.memberId === m.id)?.finalBalance ?? 0)],
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(matrix), "Trip breakdown");
 
   XLSX.writeFile(wb, `${g.name.replace(/[^\w]+/g, "_")}_${g.id}.xlsx`);
 }
