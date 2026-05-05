@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import QRCode from "qrcode";
 import { ArrowDown, ArrowUp, ExternalLink, QrCode, Wallet } from "lucide-react";
 import { Group } from "@/lib/types";
@@ -103,8 +103,8 @@ export function BalancesView({ group }: { group: Group }) {
         </div>
       )}
 
-      <BalanceSection title={`Members pay ${owner?.name ?? "owner"}`} icon={<ArrowUp className="h-4 w-4" />} rows={owesOwner} group={group} ownerId={owner?.id} ownerName={owner?.name} isOwner={isOwner} onMark={markPaidToOwner} />
-      <BalanceSection title={`${owner?.name ?? "Owner"} pays extra spent`} icon={<ArrowDown className="h-4 w-4" />} rows={ownerPays} group={group} ownerId={owner?.id} ownerName={owner?.name} isOwner={isOwner} onMark={(memberId, amount) => markOwnerPaid(memberId, amount)} positive />
+      <BalanceSection title={`Members pay ${owner?.name ?? "owner"}`} icon={<ArrowUp className="h-4 w-4" />} rows={owesOwner} group={group} ownerName={owner?.name} isOwner={isOwner} onMark={markPaidToOwner} />
+      <BalanceSection title={`${owner?.name ?? "Owner"} pays extra spent`} icon={<ArrowDown className="h-4 w-4" />} rows={ownerPays} group={group} ownerName={owner?.name} isOwner={isOwner} onMark={(memberId, amount) => markOwnerPaid(memberId, amount)} positive />
 
       <Dialog open={qrOpen} onOpenChange={setQrOpen}>
         <DialogContent className="w-[calc(100vw-1.5rem)] max-w-sm">
