@@ -514,6 +514,8 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       setRole,
       approveMember,
       rejectMember,
+      requestLeave,
+      clearLeaveRequest,
       addExpense,
       updateExpense,
       removeExpense,
@@ -528,7 +530,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
     [
       ready, profile, setProfileFields, hasProfile, themePref, resolvedTheme, setThemePref, toggleTheme,
       groups, getGroup, createGroup, joinGroup, removeGroup, setArchived, updateGroup, importGroup,
-      addMember, updateMember, removeMember, setRole, approveMember, rejectMember,
+      addMember, updateMember, removeMember, setRole, approveMember, rejectMember, requestLeave, clearLeaveRequest,
       addExpense, updateExpense, removeExpense,
       submitRequest, approveRequest, rejectRequest, addSettlement, peers, myMemberId, myRole,
     ]
