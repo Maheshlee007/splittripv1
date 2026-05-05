@@ -309,10 +309,10 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
   const addMember = useCallback(
     (groupId: string, name: string, upiId?: string, phone?: string): Member => {
       const m: Member = { id: nanoid(), name: name.trim() || "Member", upiId, phone, role: "member", status: "active" };
-      updateGroup(groupId, (g) => ({ ...g, members: [...g.members, m] }));
+      updateGroup(groupId, (g) => withActivity({ ...g, members: [...g.members, m] }, activity(profile, "member", `added ${m.name} as a member`)));
       return m;
     },
-    [updateGroup]
+    [profile, updateGroup]
   );
 
   const updateMember = useCallback(
@@ -344,21 +344,21 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
         const requests = g.requests.filter(
           (r) => r.expense.paidBy !== memberId && r.requestedBy !== memberId
         );
-        return {
+        return withActivity({
           ...g,
           members: g.members.filter((m) => m.id !== memberId),
           expenses,
           settlements,
           requests,
-        };
+        }, activity(profile, "member", "removed a member"));
       });
     },
-    [updateGroup]
+    [profile, updateGroup]
   );
 
   const setArchived = useCallback((id: string, archived: boolean) => {
-    updateGroup(id, (g) => ({ ...g, archived, archivedAt: archived ? Date.now() : undefined }));
-  }, [updateGroup]);
+    updateGroup(id, (g) => withActivity({ ...g, archived, archivedAt: archived ? Date.now() : undefined }, activity(profile, "archive", archived ? "archived the trip" : "restored the trip")));
+  }, [profile, updateGroup]);
 
   const setRole = useCallback(
     (groupId: string, memberId: string, role: Member["role"]) => {
