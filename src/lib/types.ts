@@ -8,6 +8,8 @@ export interface Member {
   role: Role;
   /** pending = waiting for owner approval after self-join */
   status?: "active" | "pending";
+  /** member asked owner/admin to remove them from the trip */
+  leaveRequested?: boolean;
 }
 
 export type SplitMode = "equal" | "shares" | "exact" | "percent";
@@ -59,6 +61,15 @@ export interface Settlement {
   createdBy: string;
 }
 
+export interface ActivityItem {
+  id: string;
+  type: "join" | "approve" | "reject" | "expense" | "request" | "settlement" | "member" | "archive" | "leave";
+  actorId: string;
+  actorName: string;
+  message: string;
+  createdAt: number;
+}
+
 export interface Group {
   id: string;          // also room code (uppercase)
   name: string;
@@ -73,6 +84,7 @@ export interface Group {
   expenses: Expense[];
   requests: ExpenseRequest[];
   settlements: Settlement[];
+  activity?: ActivityItem[];
 }
 
 export interface Profile {
