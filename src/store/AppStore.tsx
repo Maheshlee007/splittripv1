@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { customAlphabet, nanoid } from "nanoid";
-import { Expense, ExpenseRequest, Group, Member, Profile, Settlement, Split, SplitMode } from "@/lib/types";
+import { ActivityItem, Expense, ExpenseRequest, Group, Member, Profile, Settlement, Split, SplitMode } from "@/lib/types";
 import { loadGroups, loadProfile, loadTheme, saveGroup, saveProfile, saveTheme, deleteGroup, ThemePref } from "@/lib/storage";
 import { connectGroup, disconnectGroup, broadcastGroup, onRemoteGroup } from "@/lib/sync";
 
@@ -31,6 +31,8 @@ interface AppStoreValue {
   setRole: (groupId: string, memberId: string, role: Member["role"]) => void;
   approveMember: (groupId: string, memberId: string) => void;
   rejectMember: (groupId: string, memberId: string) => void;
+  requestLeave: (groupId: string) => void;
+  clearLeaveRequest: (groupId: string, memberId: string) => void;
   /* expense ops */
   addExpense: (groupId: string, e: Omit<Expense, "id" | "createdAt" | "updatedAt" | "createdBy">) => void;
   updateExpense: (groupId: string, e: Expense) => void;
@@ -51,6 +53,14 @@ const Ctx = createContext<AppStoreValue | null>(null);
 
 function defaultProfile(): Profile {
   return { id: nanoid(), name: "" };
+}
+
+function activity(profile: Profile, type: ActivityItem["type"], message: string): ActivityItem {
+  return { id: nanoid(), type, actorId: profile.id, actorName: profile.name || "Me", message, createdAt: Date.now() };
+}
+
+function withActivity(g: Group, item: ActivityItem): Group {
+  return { ...g, activity: [item, ...(g.activity ?? [])].slice(0, 250) };
 }
 
 function ensureMe(group: Group, profile: Profile): Group {
