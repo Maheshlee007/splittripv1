@@ -77,23 +77,24 @@ function buildPDF(g: Group): jsPDF {
     headStyles: { fillColor: [249, 115, 22] },
   });
 
-  const net = computeBalances(g);
-  const transfers = simplifyDebts(net);
+  const ledger = buildMemberLedger(g);
   const lastY = (doc as any).lastAutoTable.finalY ?? 60;
 
   autoTable(doc, {
     startY: lastY + 8,
-    head: [["Member", "Net balance"]],
-    body: g.members.map((m) => [m.name, fmtMoney(net[m.id] ?? 0, g.currency)]),
+    head: [["Member", "Spent", "Share", "Balance"]],
+    body: ledger.map((r) => [r.name, fmtMoney(r.paid, g.currency), fmtMoney(r.owed, g.currency), `${r.finalBalance > 0 ? "+" : r.finalBalance < 0 ? "-" : ""}${fmtMoney(Math.abs(r.finalBalance), g.currency)}`]),
     styles: { fontSize: 9 },
     headStyles: { fillColor: [34, 197, 94] },
   });
 
-  if (transfers.length) {
+  const owner = g.members.find((m) => m.id === g.ownerId) ?? g.members[0];
+  const settleRows = ledger.filter((r) => r.memberId !== owner?.id && Math.abs(r.finalBalance) > 0.01);
+  if (settleRows.length) {
     autoTable(doc, {
       startY: (doc as any).lastAutoTable.finalY + 8,
-      head: [["From", "To", "Amount"]],
-      body: transfers.map((t) => [memberName(g, t.fromId), memberName(g, t.toId), fmtMoney(t.amount, g.currency)]),
+      head: [["Action", "Amount"]],
+      body: settleRows.map((r) => [r.finalBalance < 0 ? `${r.name} pays ${owner.name}` : `${owner.name} pays ${r.name}`, fmtMoney(Math.abs(r.finalBalance), g.currency)]),
       styles: { fontSize: 9 },
       headStyles: { fillColor: [59, 130, 246] },
     });
@@ -115,24 +116,27 @@ export function buildJSONString(g: Group): string {
 }
 
 export function buildWhatsAppText(g: Group): string {
-  const net = computeBalances(g);
-  const transfers = simplifyDebts(net);
+  const ledger = buildMemberLedger(g);
+  const owner = g.members.find((m) => m.id === g.ownerId) ?? g.members[0];
   const lines: string[] = [];
   lines.push(`*${g.emoji} ${g.name}* (code ${g.id})`);
   lines.push(`Total spent: ${fmtMoney(totalSpent(g), g.currency)}`);
   lines.push("");
   lines.push("*Balances*");
-  for (const m of g.members) {
-    const v = net[m.id] ?? 0;
-    if (Math.abs(v) < 0.01) lines.push(`• ${m.name}: settled`);
-    else lines.push(`• ${m.name}: ${v > 0 ? "+" : ""}${fmtMoney(v, g.currency)}`);
+  for (const r of ledger) {
+    const v = r.finalBalance;
+    if (Math.abs(v) < 0.01) lines.push(`• ${r.name}: settled (spent ${fmtMoney(r.paid, g.currency)}, share ${fmtMoney(r.owed, g.currency)})`);
+    else lines.push(`• ${r.name}: ${v > 0 ? "+" : "-"}${fmtMoney(Math.abs(v), g.currency)} (spent ${fmtMoney(r.paid, g.currency)}, share ${fmtMoney(r.owed, g.currency)})`);
   }
-  if (transfers.length) {
-    lines.push("");
-    lines.push("*Settle up*");
-    for (const t of transfers) {
-      lines.push(`→ ${memberName(g, t.fromId)} pays ${memberName(g, t.toId)} ${fmtMoney(t.amount, g.currency)}`);
-    }
+  const payOwner = ledger.filter((r) => r.memberId !== owner?.id && r.finalBalance < -0.01);
+  const ownerPays = ledger.filter((r) => r.memberId !== owner?.id && r.finalBalance > 0.01);
+  if (payOwner.length) {
+    lines.push("", `*Pay ${owner.name}*`);
+    for (const r of payOwner) lines.push(`→ ${r.name}: ${fmtMoney(Math.abs(r.finalBalance), g.currency)}`);
+  }
+  if (ownerPays.length) {
+    lines.push("", `*${owner.name} pays extra spent*`);
+    for (const r of ownerPays) lines.push(`→ ${r.name}: ${fmtMoney(r.finalBalance, g.currency)}`);
   }
   lines.push("");
   lines.push("Tracked with SplitTrip 🧳");
