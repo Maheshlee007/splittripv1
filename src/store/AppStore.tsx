@@ -368,8 +368,11 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
   );
 
   const approveMember = useCallback((groupId: string, memberId: string) => {
-    updateMember(groupId, memberId, { status: "active" });
-  }, [updateMember]);
+    updateGroup(groupId, (g) => withActivity({
+      ...g,
+      members: g.members.map((m) => (m.id === memberId ? { ...m, status: "active" } : m)),
+    }, activity(profile, "approve", "approved a join request")));
+  }, [profile, updateGroup]);
 
   const rejectMember = useCallback((groupId: string, memberId: string) => {
     removeMember(groupId, memberId);
@@ -392,9 +395,9 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
   const addExpense = useCallback<AppStoreValue["addExpense"]>(
     (groupId, e) => {
       const exp: Expense = { ...e, id: nanoid(), createdAt: Date.now(), updatedAt: Date.now(), createdBy: profile.id };
-      updateGroup(groupId, (g) => ({ ...g, expenses: [exp, ...g.expenses] }));
+      updateGroup(groupId, (g) => withActivity({ ...g, expenses: [exp, ...g.expenses] }, activity(profile, "expense", `added ${e.description} for ${e.amount}`)));
     },
-    [profile.id, updateGroup]
+    [profile, updateGroup]
   );
 
   const updateExpense = useCallback(
@@ -423,9 +426,9 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
         requestedBy: profile.id,
         requestedAt: Date.now(),
       };
-      updateGroup(groupId, (g) => ({ ...g, requests: [r, ...g.requests] }));
+      updateGroup(groupId, (g) => withActivity({ ...g, requests: [r, ...g.requests] }, activity(profile, "request", `requested expense ${e.description}`)));
     },
-    [profile.id, updateGroup]
+    [profile, updateGroup]
   );
 
   const approveRequest = useCallback(
