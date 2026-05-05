@@ -152,7 +152,14 @@ export async function shareWhatsApp(g: Group): Promise<void> {
 }
 
 export async function exportImage(node: HTMLElement, filename: string): Promise<void> {
-  const dataUrl = await toPng(node, { pixelRatio: 2, cacheBust: true, backgroundColor: getComputedStyle(document.body).backgroundColor });
+  const dataUrl = await toPng(node, {
+    pixelRatio: 2,
+    cacheBust: true,
+    backgroundColor: getComputedStyle(document.body).backgroundColor,
+    width: node.scrollWidth,
+    height: node.scrollHeight,
+    style: { overflow: "visible", maxHeight: "none" },
+  });
   const a = document.createElement("a");
   a.href = dataUrl;
   a.download = filename;
