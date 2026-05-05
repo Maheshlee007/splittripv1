@@ -374,6 +374,20 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
     removeMember(groupId, memberId);
   }, [removeMember]);
 
+  const requestLeave = useCallback((groupId: string) => {
+    updateGroup(groupId, (g) => withActivity({
+      ...g,
+      members: g.members.map((m) => (m.id === profile.id ? { ...m, leaveRequested: true } : m)),
+    }, activity(profile, "leave", "requested to leave the trip")));
+  }, [profile, updateGroup]);
+
+  const clearLeaveRequest = useCallback((groupId: string, memberId: string) => {
+    updateGroup(groupId, (g) => withActivity({
+      ...g,
+      members: g.members.map((m) => (m.id === memberId ? { ...m, leaveRequested: false } : m)),
+    }, activity(profile, "leave", "cleared a leave request")));
+  }, [profile, updateGroup]);
+
   const addExpense = useCallback<AppStoreValue["addExpense"]>(
     (groupId, e) => {
       const exp: Expense = { ...e, id: nanoid(), createdAt: Date.now(), updatedAt: Date.now(), createdBy: profile.id };
