@@ -565,6 +565,26 @@ function mergeGroups(a: Group, b: Group): Group {
   return merged;
 }
 
+function sanitizeIncomingForProfile(incoming: Group, local: Group | undefined, profile: Profile): Group {
+  const localMe = local?.members.find((m) => m.id === profile.id);
+  const incomingMe = incoming.members.find((m) => m.id === profile.id);
+  const iAmOwner = local?.ownerId === profile.id || incoming.ownerId === profile.id;
+  const approved = iAmOwner || localMe?.status === "active" || incomingMe?.status === "active";
+  if (approved) return incoming;
+  const owner = incoming.members.find((m) => m.id === incoming.ownerId);
+  const me = incomingMe ?? localMe ?? { id: profile.id, name: profile.name || "Me", role: "member" as const, status: "pending" as const, upiId: profile.upiId, phone: profile.phone };
+  return {
+    ...incoming,
+    name: local?.name || incoming.name,
+    emoji: local?.emoji || incoming.emoji,
+    members: [owner, { ...me, status: "pending" as const }].filter(Boolean) as Member[],
+    expenses: [],
+    requests: [],
+    settlements: [],
+    activity: incoming.activity?.filter((a) => a.actorId === profile.id || a.type === "join"),
+  };
+}
+
 function mergeBy<T>(a: T[], b: T[], key: (t: T) => string, pick: (x: T, y: T) => T): T[] {
   const map = new Map<string, T>();
   for (const x of a) map.set(key(x), x);
