@@ -94,7 +94,7 @@ function buildPDF(g: Group): jsPDF {
     autoTable(doc, {
       startY: (doc as any).lastAutoTable.finalY + 8,
       head: [["Action", "Amount"]],
-      body: settleRows.map((r) => [r.finalBalance < 0 ? `${r.name} pays ${owner.name}` : `${owner.name} pays ${r.name}`, fmtMoney(Math.abs(r.finalBalance), g.currency)]),
+      body: settleRows.map((r) => [r.finalBalance < 0 ? `${r.name} pays ${owner?.name ?? "owner"}` : `${owner?.name ?? "Owner"} pays ${r.name}`, fmtMoney(Math.abs(r.finalBalance), g.currency)]),
       styles: { fontSize: 9 },
       headStyles: { fillColor: [59, 130, 246] },
     });
@@ -131,11 +131,11 @@ export function buildWhatsAppText(g: Group): string {
   const payOwner = ledger.filter((r) => r.memberId !== owner?.id && r.finalBalance < -0.01);
   const ownerPays = ledger.filter((r) => r.memberId !== owner?.id && r.finalBalance > 0.01);
   if (payOwner.length) {
-    lines.push("", `*Pay ${owner.name}*`);
+    lines.push("", `*Pay ${owner?.name ?? "owner"}*`);
     for (const r of payOwner) lines.push(`→ ${r.name}: ${fmtMoney(Math.abs(r.finalBalance), g.currency)}`);
   }
   if (ownerPays.length) {
-    lines.push("", `*${owner.name} pays extra spent*`);
+    lines.push("", `*${owner?.name ?? "Owner"} pays extra spent*`);
     for (const r of ownerPays) lines.push(`→ ${r.name}: ${fmtMoney(r.finalBalance, g.currency)}`);
   }
   lines.push("");
