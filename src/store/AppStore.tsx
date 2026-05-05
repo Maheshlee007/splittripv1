@@ -136,6 +136,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       connectGroup(g.id, {
         onPeers: (n) => setPeers((p) => ({ ...p, [g.id]: n })),
       });
+      window.setTimeout(() => broadcastGroup(g), 250);
     }
     return () => {
       for (const id of ids) disconnectGroup(id);
@@ -149,11 +150,11 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       setGroups((curr) => {
         const idx = curr.findIndex((g) => g.id === incoming.id);
         if (idx === -1) {
-          const merged = ensureMe(incoming, profile);
+          const merged = ensureMe(sanitizeIncomingForProfile(incoming, undefined, profile), profile);
           saveGroup(merged);
           return [...curr, merged];
         }
-        const merged = ensureMe(mergeGroups(curr[idx], incoming), profile);
+        const merged = ensureMe(mergeGroups(curr[idx], sanitizeIncomingForProfile(incoming, curr[idx], profile)), profile);
         saveGroup(merged);
         const next = [...curr];
         next[idx] = merged;
