@@ -38,7 +38,14 @@ export function ExportPreview({
       setText(buildWhatsAppText(group));
     } else if (kind === "image" && imageNode) {
       import("html-to-image").then(({ toPng }) =>
-        toPng(imageNode, { pixelRatio: 2, cacheBust: true, backgroundColor: getComputedStyle(document.body).backgroundColor })
+        toPng(imageNode, {
+          pixelRatio: 2,
+          cacheBust: true,
+          backgroundColor: getComputedStyle(document.body).backgroundColor,
+          width: imageNode.scrollWidth,
+          height: imageNode.scrollHeight,
+          style: { overflow: "visible", maxHeight: "none" },
+        })
           .then(setImgUrl)
           .catch(() => toast.error("Image render failed"))
       );
@@ -63,10 +70,14 @@ export function ExportPreview({
 
         <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-border bg-secondary/30">
           {kind === "pdf" && pdfUrl && (
-            <iframe src={pdfUrl} title="PDF preview" className="h-[65vh] w-full bg-white" />
+            <object data={pdfUrl} type="application/pdf" className="h-[65vh] w-full bg-white">
+              <div className="grid h-48 place-items-center p-4 text-center text-xs text-muted-foreground">
+                PDF preview is blocked on this phone. Use Download PDF below.
+              </div>
+            </object>
           )}
           {kind === "image" && (
-            imgUrl ? <img src={imgUrl} alt="preview" className="mx-auto max-h-[65vh] w-auto" /> :
+            imgUrl ? <img src={imgUrl} alt="preview" className="mx-auto max-w-none" /> :
             <div className="grid h-48 place-items-center text-xs text-muted-foreground">Rendering…</div>
           )}
           {kind === "whatsapp" && (
