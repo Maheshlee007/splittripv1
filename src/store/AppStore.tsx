@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { customAlphabet, nanoid } from "nanoid";
-import { Expense, ExpenseRequest, Group, Member, Profile, Settlement, Split, SplitMode } from "@/lib/types";
+import { ActivityItem, Expense, ExpenseRequest, Group, Member, Profile, Settlement, Split, SplitMode } from "@/lib/types";
 import { loadGroups, loadProfile, loadTheme, saveGroup, saveProfile, saveTheme, deleteGroup, ThemePref } from "@/lib/storage";
 import { connectGroup, disconnectGroup, broadcastGroup, onRemoteGroup } from "@/lib/sync";
 
@@ -31,6 +31,8 @@ interface AppStoreValue {
   setRole: (groupId: string, memberId: string, role: Member["role"]) => void;
   approveMember: (groupId: string, memberId: string) => void;
   rejectMember: (groupId: string, memberId: string) => void;
+  requestLeave: (groupId: string) => void;
+  clearLeaveRequest: (groupId: string, memberId: string) => void;
   /* expense ops */
   addExpense: (groupId: string, e: Omit<Expense, "id" | "createdAt" | "updatedAt" | "createdBy">) => void;
   updateExpense: (groupId: string, e: Expense) => void;
@@ -51,6 +53,14 @@ const Ctx = createContext<AppStoreValue | null>(null);
 
 function defaultProfile(): Profile {
   return { id: nanoid(), name: "" };
+}
+
+function activity(profile: Profile, type: ActivityItem["type"], message: string): ActivityItem {
+  return { id: nanoid(), type, actorId: profile.id, actorName: profile.name || "Me", message, createdAt: Date.now() };
+}
+
+function withActivity(g: Group, item: ActivityItem): Group {
+  return { ...g, activity: [item, ...(g.activity ?? [])].slice(0, 250) };
 }
 
 function ensureMe(group: Group, profile: Profile): Group {
@@ -126,6 +136,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       connectGroup(g.id, {
         onPeers: (n) => setPeers((p) => ({ ...p, [g.id]: n })),
       });
+      window.setTimeout(() => broadcastGroup(g), 250);
     }
     return () => {
       for (const id of ids) disconnectGroup(id);
@@ -139,11 +150,11 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       setGroups((curr) => {
         const idx = curr.findIndex((g) => g.id === incoming.id);
         if (idx === -1) {
-          const merged = ensureMe(incoming, profile);
+          const merged = ensureMe(sanitizeIncomingForProfile(incoming, undefined, profile), profile);
           saveGroup(merged);
           return [...curr, merged];
         }
-        const merged = ensureMe(mergeGroups(curr[idx], incoming), profile);
+        const merged = ensureMe(mergeGroups(curr[idx], sanitizeIncomingForProfile(incoming, curr[idx], profile)), profile);
         saveGroup(merged);
         const next = [...curr];
         next[idx] = merged;
@@ -221,6 +232,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
         expenses: [],
         requests: [],
         settlements: [],
+        activity: [activity(profile, "member", "created the trip")],
       };
       setGroups((curr) => [...curr, g]);
       persist(g);
@@ -252,6 +264,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
         expenses: [],
         requests: [],
         settlements: [],
+        activity: [activity(profile, "join", "requested to join the trip")],
       };
       setGroups((curr) => [...curr, g]);
       persist(g);
@@ -296,10 +309,10 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
   const addMember = useCallback(
     (groupId: string, name: string, upiId?: string, phone?: string): Member => {
       const m: Member = { id: nanoid(), name: name.trim() || "Member", upiId, phone, role: "member", status: "active" };
-      updateGroup(groupId, (g) => ({ ...g, members: [...g.members, m] }));
+      updateGroup(groupId, (g) => withActivity({ ...g, members: [...g.members, m] }, activity(profile, "member", `added ${m.name} as a member`)));
       return m;
     },
-    [updateGroup]
+    [profile, updateGroup]
   );
 
   const updateMember = useCallback(
@@ -331,21 +344,21 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
         const requests = g.requests.filter(
           (r) => r.expense.paidBy !== memberId && r.requestedBy !== memberId
         );
-        return {
+        return withActivity({
           ...g,
           members: g.members.filter((m) => m.id !== memberId),
           expenses,
           settlements,
           requests,
-        };
+        }, activity(profile, "member", "removed a member"));
       });
     },
-    [updateGroup]
+    [profile, updateGroup]
   );
 
   const setArchived = useCallback((id: string, archived: boolean) => {
-    updateGroup(id, (g) => ({ ...g, archived, archivedAt: archived ? Date.now() : undefined }));
-  }, [updateGroup]);
+    updateGroup(id, (g) => withActivity({ ...g, archived, archivedAt: archived ? Date.now() : undefined }, activity(profile, "archive", archived ? "archived the trip" : "restored the trip")));
+  }, [profile, updateGroup]);
 
   const setRole = useCallback(
     (groupId: string, memberId: string, role: Member["role"]) => {
@@ -355,19 +368,36 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
   );
 
   const approveMember = useCallback((groupId: string, memberId: string) => {
-    updateMember(groupId, memberId, { status: "active" });
-  }, [updateMember]);
+    updateGroup(groupId, (g) => withActivity({
+      ...g,
+      members: g.members.map((m) => (m.id === memberId ? { ...m, status: "active" } : m)),
+    }, activity(profile, "approve", "approved a join request")));
+  }, [profile, updateGroup]);
 
   const rejectMember = useCallback((groupId: string, memberId: string) => {
     removeMember(groupId, memberId);
   }, [removeMember]);
 
+  const requestLeave = useCallback((groupId: string) => {
+    updateGroup(groupId, (g) => withActivity({
+      ...g,
+      members: g.members.map((m) => (m.id === profile.id ? { ...m, leaveRequested: true } : m)),
+    }, activity(profile, "leave", "requested to leave the trip")));
+  }, [profile, updateGroup]);
+
+  const clearLeaveRequest = useCallback((groupId: string, memberId: string) => {
+    updateGroup(groupId, (g) => withActivity({
+      ...g,
+      members: g.members.map((m) => (m.id === memberId ? { ...m, leaveRequested: false } : m)),
+    }, activity(profile, "leave", "cleared a leave request")));
+  }, [profile, updateGroup]);
+
   const addExpense = useCallback<AppStoreValue["addExpense"]>(
     (groupId, e) => {
       const exp: Expense = { ...e, id: nanoid(), createdAt: Date.now(), updatedAt: Date.now(), createdBy: profile.id };
-      updateGroup(groupId, (g) => ({ ...g, expenses: [exp, ...g.expenses] }));
+      updateGroup(groupId, (g) => withActivity({ ...g, expenses: [exp, ...g.expenses] }, activity(profile, "expense", `added ${e.description} for ${e.amount}`)));
     },
-    [profile.id, updateGroup]
+    [profile, updateGroup]
   );
 
   const updateExpense = useCallback(
@@ -396,9 +426,9 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
         requestedBy: profile.id,
         requestedAt: Date.now(),
       };
-      updateGroup(groupId, (g) => ({ ...g, requests: [r, ...g.requests] }));
+      updateGroup(groupId, (g) => withActivity({ ...g, requests: [r, ...g.requests] }, activity(profile, "request", `requested expense ${e.description}`)));
     },
-    [profile.id, updateGroup]
+    [profile, updateGroup]
   );
 
   const approveRequest = useCallback(
@@ -488,6 +518,8 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       setRole,
       approveMember,
       rejectMember,
+      requestLeave,
+      clearLeaveRequest,
       addExpense,
       updateExpense,
       removeExpense,
@@ -502,7 +534,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
     [
       ready, profile, setProfileFields, hasProfile, themePref, resolvedTheme, setThemePref, toggleTheme,
       groups, getGroup, createGroup, joinGroup, removeGroup, setArchived, updateGroup, importGroup,
-      addMember, updateMember, removeMember, setRole, approveMember, rejectMember,
+      addMember, updateMember, removeMember, setRole, approveMember, rejectMember, requestLeave, clearLeaveRequest,
       addExpense, updateExpense, removeExpense,
       submitRequest, approveRequest, rejectRequest, addSettlement, peers, myMemberId, myRole,
     ]
@@ -534,6 +566,26 @@ function mergeGroups(a: Group, b: Group): Group {
     settlements: mergeBy(a.settlements, b.settlements, (m) => m.id, (x) => x),
   };
   return merged;
+}
+
+function sanitizeIncomingForProfile(incoming: Group, local: Group | undefined, profile: Profile): Group {
+  const localMe = local?.members.find((m) => m.id === profile.id);
+  const incomingMe = incoming.members.find((m) => m.id === profile.id);
+  const iAmOwner = local?.ownerId === profile.id || incoming.ownerId === profile.id;
+  const approved = iAmOwner || localMe?.status === "active" || incomingMe?.status === "active";
+  if (approved) return incoming;
+  const owner = incoming.members.find((m) => m.id === incoming.ownerId);
+  const me = incomingMe ?? localMe ?? { id: profile.id, name: profile.name || "Me", role: "member" as const, status: "pending" as const, upiId: profile.upiId, phone: profile.phone };
+  return {
+    ...incoming,
+    name: local?.name || incoming.name,
+    emoji: local?.emoji || incoming.emoji,
+    members: [owner, { ...me, status: "pending" as const }].filter(Boolean) as Member[],
+    expenses: [],
+    requests: [],
+    settlements: [],
+    activity: incoming.activity?.filter((a) => a.actorId === profile.id || a.type === "join"),
+  };
 }
 
 function mergeBy<T>(a: T[], b: T[], key: (t: T) => string, pick: (x: T, y: T) => T): T[] {

@@ -10,7 +10,7 @@ import { useConfirm } from "./ConfirmDialog";
 import { toast } from "sonner";
 
 export function MembersList({ group }: { group: Group }) {
-  const { addMember, removeMember, setRole, profile, myRole, approveMember, rejectMember } = useApp();
+  const { addMember, removeMember, setRole, profile, myRole, approveMember, rejectMember, requestLeave, clearLeaveRequest } = useApp();
   const confirm = useConfirm();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
@@ -121,6 +121,7 @@ export function MembersList({ group }: { group: Group }) {
                   <div className="flex items-center gap-1.5">
                     <span className="truncate text-sm font-medium">{m.name}</span>
                     {isMe && <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-primary">you</span>}
+                    {m.leaveRequested && <span className="rounded bg-warning/15 px-1.5 py-0.5 text-[10px] font-medium text-warning">leave requested</span>}
                   </div>
                   {(m.phone || m.upiId) && (
                     <div className="truncate text-xs text-muted-foreground">
@@ -143,6 +144,9 @@ export function MembersList({ group }: { group: Group }) {
                   {isGroupOwner ? <Crown className="h-3 w-3" /> : m.role === "admin" ? <Shield className="h-3 w-3" /> : <UserIcon className="h-3 w-3" />}
                   {isGroupOwner ? "owner" : m.role}
                 </button>
+                {canManage && m.leaveRequested && !isGroupOwner && (
+                  <Button size="sm" variant="ghost" className="h-7 text-[11px]" onClick={() => clearLeaveRequest(group.id, m.id)}>Keep</Button>
+                )}
                 {canManage && !isMe && !isGroupOwner && (
                   <button
                     onClick={async () => {
@@ -153,6 +157,17 @@ export function MembersList({ group }: { group: Group }) {
                         destructive: true,
                       });
                       if (ok) removeMember(group.id, m.id);
+                    }}
+                    className="grid h-7 w-7 place-items-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                )}
+                {isMe && !isGroupOwner && !m.leaveRequested && (
+                  <button
+                    onClick={async () => {
+                      const ok = await confirm({ title: "Request to leave this trip?", description: "The owner will approve removal so balances stay correct.", confirmText: "Request leave" });
+                      if (ok) { requestLeave(group.id); toast.success("Leave request sent"); }
                     }}
                     className="grid h-7 w-7 place-items-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                   >

@@ -1,6 +1,6 @@
 import { forwardRef, useMemo } from "react";
 import { Group } from "@/lib/types";
-import { computeShareAmount, totalSpent } from "@/lib/balances";
+import { buildExpenseBreakdownRows, buildMemberLedger, totalSpent } from "@/lib/balances";
 import { fmtMoney } from "@/lib/format";
 import { getCategory } from "@/lib/categories";
 import { TrendingUp, Users, Receipt, Wallet } from "lucide-react";
@@ -10,29 +10,8 @@ export const DashboardView = forwardRef<HTMLDivElement, { group: Group }>(({ gro
   const activeMembers = group.members.filter((m) => m.status !== "pending");
   const avg = activeMembers.length ? total / activeMembers.length : 0;
 
-  // Build matrix: row = (dateKey, category), members → amount paid by them in that bucket
-  const rows = useMemo(() => {
-    const buckets = new Map<string, { date: number; category: string; total: number; perMember: Record<string, number> }>();
-    for (const e of group.expenses) {
-      const d = new Date(e.createdAt);
-      const dateKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-      const key = `${dateKey}__${e.category}`;
-      let bucket = buckets.get(key);
-      if (!bucket) {
-        bucket = { date: e.createdAt, category: e.category, total: 0, perMember: {} };
-        buckets.set(key, bucket);
-      }
-      bucket.total += e.amount;
-      // attribute each split share to that member
-      for (const s of e.splits) {
-        const share = computeShareAmount(e.amount, e.splitMode, e.splits, s.memberId);
-        bucket.perMember[s.memberId] = (bucket.perMember[s.memberId] ?? 0) + share;
-      }
-    }
-    const arr = [...buckets.values()];
-    arr.sort((a, b) => b.date - a.date || a.category.localeCompare(b.category));
-    return arr;
-  }, [group.expenses]);
+  const rows = useMemo(() => buildExpenseBreakdownRows(group), [group]);
+  const ledger = useMemo(() => buildMemberLedger(group), [group]);
 
   // Group rows by date for rowspan
   const dateGroups = useMemo(() => {
@@ -60,17 +39,17 @@ export const DashboardView = forwardRef<HTMLDivElement, { group: Group }>(({ gro
       <section className="rounded-2xl border border-border bg-card p-3 shadow-card sm:p-4">
         <div className="mb-3 flex items-center justify-between">
           <h3 className="text-sm font-semibold">Trip breakdown</h3>
-          <span className="text-[10px] text-muted-foreground">share per member · {group.currency}</span>
+          <span className="text-[10px] text-muted-foreground">share / paid / balance · {group.currency}</span>
         </div>
         {rows.length === 0 ? (
           <p className="text-xs text-muted-foreground">No expenses yet.</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[520px] border-collapse text-xs">
+          <div className="max-h-[70vh] overflow-auto rounded-lg border border-border/60">
+            <table className="w-full min-w-[680px] border-collapse text-xs">
               <thead>
-                <tr className="border-b border-border bg-secondary/40 text-left text-[10px] uppercase tracking-wider text-muted-foreground">
+                <tr className="sticky top-0 z-10 border-b border-border bg-secondary text-left text-[10px] uppercase tracking-wider text-muted-foreground">
                   <th className="px-2 py-2 font-semibold">Date</th>
-                  <th className="px-2 py-2 font-semibold">Category</th>
+                  <th className="px-2 py-2 font-semibold">Category / desc</th>
                   <th className="px-2 py-2 text-right font-semibold">Total</th>
                   {activeMembers.map((m) => (
                     <th key={m.id} className="px-2 py-2 text-right font-semibold">{m.name}</th>
@@ -90,16 +69,16 @@ export const DashboardView = forwardRef<HTMLDivElement, { group: Group }>(({ gro
                           </td>
                         ) : null}
                         <td className="px-2 py-2">
-                          <span className="inline-flex items-center gap-1.5">
+                          <span className="inline-flex items-start gap-1.5">
                             <span className="grid h-5 w-5 place-items-center rounded" style={{ background: `${c.color}22`, color: c.color }}>
                               <Icon className="h-3 w-3" />
                             </span>
-                            {c.label}
+                            <span><span className="font-medium">{c.label}</span><span className="block text-[10px] text-muted-foreground">{r.description}</span></span>
                           </span>
                         </td>
                         <td className="px-2 py-2 text-right font-semibold tabular-nums">{fmtMoney(r.total, group.currency)}</td>
                         {activeMembers.map((m) => {
-                          const v = r.perMember[m.id] ?? 0;
+                          const v = r.shares[m.id] ?? 0;
                           return (
                             <td key={m.id} className={`px-2 py-2 text-right tabular-nums ${v > 0 ? "" : "text-muted-foreground/40"}`}>
                               {v > 0 ? fmtMoney(v, group.currency) : "—"}
@@ -110,14 +89,22 @@ export const DashboardView = forwardRef<HTMLDivElement, { group: Group }>(({ gro
                     );
                   })
                 ))}
-                {/* Member totals */}
                 <tr className="border-t-2 border-primary/30 bg-primary/5 font-semibold">
-                  <td colSpan={2} className="px-2 py-2 text-right">Total share</td>
+                  <td colSpan={2} className="px-2 py-2 text-right">Spent per person</td>
                   <td className="px-2 py-2 text-right tabular-nums">{fmtMoney(total, group.currency)}</td>
+                  {activeMembers.map((m) => <td key={m.id} className="px-2 py-2 text-right tabular-nums text-destructive">-{fmtMoney(ledger.find((r) => r.memberId === m.id)?.owed ?? 0, group.currency)}</td>)}
+                </tr>
+                <tr className="border-t border-border bg-secondary/30 font-semibold">
+                  <td colSpan={2} className="px-2 py-2 text-right">Individual spent</td>
+                  <td />
+                  {activeMembers.map((m) => <td key={m.id} className="px-2 py-2 text-right tabular-nums text-success">+{fmtMoney(ledger.find((r) => r.memberId === m.id)?.paid ?? 0, group.currency)}</td>)}
+                </tr>
+                <tr className="border-t border-border bg-secondary/60 font-bold">
+                  <td colSpan={2} className="px-2 py-2 text-right">Balances</td>
+                  <td />
                   {activeMembers.map((m) => {
-                    let s = 0;
-                    for (const e of group.expenses) s += computeShareAmount(e.amount, e.splitMode, e.splits, m.id);
-                    return <td key={m.id} className="px-2 py-2 text-right tabular-nums">{fmtMoney(s, group.currency)}</td>;
+                    const bal = ledger.find((r) => r.memberId === m.id)?.finalBalance ?? 0;
+                    return <td key={m.id} className={`px-2 py-2 text-right tabular-nums ${bal > 0 ? "text-success" : bal < 0 ? "text-destructive" : "text-muted-foreground"}`}>{bal > 0 ? "+" : bal < 0 ? "-" : ""}{fmtMoney(Math.abs(bal), group.currency)}</td>;
                   })}
                 </tr>
               </tbody>

@@ -1,6 +1,6 @@
 import { useState, useRef } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { Plus, Share2, Wifi, WifiOff, Trash2, FileSpreadsheet, FileText, MessageCircle, Image as ImageIcon, MoreVertical, FileJson, BarChart3, Archive, ArchiveRestore, Eye } from "lucide-react";
+import { Plus, Share2, Wifi, WifiOff, Trash2, FileSpreadsheet, FileText, MessageCircle, Image as ImageIcon, MoreVertical, FileJson, BarChart3, Archive, ArchiveRestore, Eye, Activity } from "lucide-react";
 import { useApp } from "@/store/AppStore";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { BalancesView } from "@/components/BalancesView";
 import { RequestsList } from "@/components/RequestsList";
 import { MembersList } from "@/components/MembersList";
 import { DashboardView } from "@/components/DashboardView";
+import { ActivityView } from "@/components/ActivityView";
 import { ExpenseDialog } from "@/components/ExpenseDialog";
 import { ShareCodeDialog } from "@/components/ShareCodeDialog";
 import { ExportPreview } from "@/components/ExportPreview";
@@ -159,10 +160,11 @@ export default function GroupPage() {
         </div>
 
         <Tabs defaultValue={initialTab}>
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full grid-cols-6 overflow-x-auto">
             <TabsTrigger value="expenses">Expenses</TabsTrigger>
             <TabsTrigger value="balances">Balances</TabsTrigger>
             <TabsTrigger value="dashboard"><BarChart3 className="h-3.5 w-3.5" /></TabsTrigger>
+            <TabsTrigger value="activity"><Activity className="h-3.5 w-3.5" /></TabsTrigger>
             <TabsTrigger value="requests">
               Requests
               {group.requests.filter((r) => r.status === "pending").length > 0 && (
@@ -188,6 +190,9 @@ export default function GroupPage() {
           </TabsContent>
           <TabsContent value="dashboard" className="pt-4">
             <DashboardView ref={dashRef} group={group} />
+          </TabsContent>
+          <TabsContent value="activity" className="pt-4">
+            <ActivityView group={group} />
           </TabsContent>
           <TabsContent value="requests" className="pt-4">
             <RequestsList group={group} />

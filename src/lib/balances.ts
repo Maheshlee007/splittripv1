@@ -1,5 +1,25 @@
 import { Expense, Group, Settlement, Split, SplitMode } from "./types";
 
+export interface MemberLedgerRow {
+  memberId: string;
+  name: string;
+  paid: number;
+  owed: number;
+  balance: number;
+  settled: number;
+  finalBalance: number;
+}
+
+export interface BreakdownRow {
+  id: string;
+  date: number;
+  category: string;
+  description: string;
+  total: number;
+  paidBy: string;
+  shares: Record<string, number>;
+}
+
 export function computeShareAmount(amount: number, mode: SplitMode, splits: Split[], memberId: string): number {
   const s = splits.find((x) => x.memberId === memberId);
   if (!s) return 0;
@@ -40,6 +60,46 @@ export function computeBalances(group: Group): Record<string, number> {
     net[st.toId] -= st.amount;
   }
   return net;
+}
+
+export function buildMemberLedger(group: Group): MemberLedgerRow[] {
+  const active = group.members.filter((m) => m.status !== "pending");
+  const rows: Record<string, MemberLedgerRow> = Object.fromEntries(
+    active.map((m) => [m.id, { memberId: m.id, name: m.name, paid: 0, owed: 0, balance: 0, settled: 0, finalBalance: 0 }])
+  );
+
+  for (const e of group.expenses) {
+    if (!rows[e.paidBy]) rows[e.paidBy] = { memberId: e.paidBy, name: group.members.find((m) => m.id === e.paidBy)?.name ?? "Unknown", paid: 0, owed: 0, balance: 0, settled: 0, finalBalance: 0 };
+    rows[e.paidBy].paid += e.amount;
+    for (const s of e.splits) {
+      if (!rows[s.memberId]) rows[s.memberId] = { memberId: s.memberId, name: group.members.find((m) => m.id === s.memberId)?.name ?? "Unknown", paid: 0, owed: 0, balance: 0, settled: 0, finalBalance: 0 };
+      rows[s.memberId].owed += computeShareAmount(e.amount, e.splitMode, e.splits, s.memberId);
+    }
+  }
+
+  for (const st of group.settlements) {
+    if (rows[st.fromId]) rows[st.fromId].settled += st.amount;
+    if (rows[st.toId]) rows[st.toId].settled -= st.amount;
+  }
+
+  return Object.values(rows).map((r) => {
+    const balance = r.paid - r.owed;
+    return { ...r, balance, finalBalance: balance + r.settled };
+  });
+}
+
+export function buildExpenseBreakdownRows(group: Group): BreakdownRow[] {
+  return [...group.expenses]
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .map((e) => ({
+      id: e.id,
+      date: e.createdAt,
+      category: e.category,
+      description: e.description,
+      total: e.amount,
+      paidBy: e.paidBy,
+      shares: Object.fromEntries(e.splits.map((s) => [s.memberId, computeShareAmount(e.amount, e.splitMode, e.splits, s.memberId)])),
+    }));
 }
 
 export interface Transfer { fromId: string; toId: string; amount: number; }
