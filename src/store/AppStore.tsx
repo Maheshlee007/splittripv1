@@ -395,7 +395,8 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
 
   const addExpense = useCallback<AppStoreValue["addExpense"]>(
     (groupId, e) => {
-      const exp: Expense = { ...e, id: nanoid(), createdAt: Date.now(), updatedAt: Date.now(), createdBy: profile.id };
+      const now = Date.now();
+      const exp: Expense = { ...e, id: nanoid(), createdAt: (e as any).date ?? now, updatedAt: now, createdBy: profile.id, date: (e as any).date ?? now };
       updateGroup(groupId, (g) => withActivity({ ...g, expenses: [exp, ...g.expenses] }, activity(profile, "expense", `added ${e.description} for ${e.amount}`)));
     },
     [profile, updateGroup]
