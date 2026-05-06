@@ -90,16 +90,16 @@ export function buildMemberLedger(group: Group): MemberLedgerRow[] {
 
 export function buildExpenseBreakdownRows(group: Group): BreakdownRow[] {
   return [...group.expenses]
-    .sort((a, b) => b.createdAt - a.createdAt)
     .map((e) => ({
       id: e.id,
-      date: e.createdAt,
+      date: (e as any).date ?? e.createdAt,
       category: e.category,
       description: e.description,
       total: e.amount,
       paidBy: e.paidBy,
       shares: Object.fromEntries(e.splits.map((s) => [s.memberId, computeShareAmount(e.amount, e.splitMode, e.splits, s.memberId)])),
-    }));
+    }))
+    .sort((a, b) => b.date - a.date);
 }
 
 export interface Transfer { fromId: string; toId: string; amount: number; }
