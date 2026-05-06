@@ -33,19 +33,23 @@ export default function TripsPage() {
   const fileRef = useRef<HTMLInputElement>(null);
   const handledJoinRef = useRef(false);
 
-  // Auto-join via ?join=CODE
+  // Auto-join via ?join=CODE  or  ?trip=CODE&code=SECRET[&sdp=...]
   useEffect(() => {
-    const j = params.get("join");
+    const j = (params.get("join") || params.get("trip") || "").toUpperCase().trim();
+    const sdp = params.get("sdp");
     if (!j || handledJoinRef.current) return;
     handledJoinRef.current = true;
-    const codeUp = j.toUpperCase().trim();
-    if (codeUp.length !== 6) { setParams({}, { replace: true }); return; }
+    if (j.length !== 6) { setParams({}, { replace: true }); return; }
     if (!hasProfile) {
-      setProfileGate({ join: codeUp });
+      setProfileGate({ join: j });
       return;
     }
-    const g = joinGroup(codeUp);
+    const g = joinGroup(j);
     setParams({}, { replace: true });
+    if (sdp) {
+      // Offline QR fallback: stash for the trip page to consume
+      try { sessionStorage.setItem(`splittrip:offline-offer:${j}`, sdp); } catch {}
+    }
     toast.success(`Joining ${g.name} — waiting for owner approval`);
     nav(`/trip/${g.id}`);
     // eslint-disable-next-line react-hooks/exhaustive-deps
