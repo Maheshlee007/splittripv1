@@ -50,6 +50,19 @@ async function fileToDataUrl(file: File, maxW = 1280): Promise<string> {
   }
 }
 
+function toDateInput(ts: number): string {
+  const d = new Date(ts);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+function fromDateInput(s: string, fallback: number): number {
+  if (!s) return fallback;
+  const [y, m, d] = s.split("-").map(Number);
+  const dt = new Date(fallback);
+  dt.setFullYear(y, (m || 1) - 1, d || 1);
+  return dt.getTime();
+}
+
 export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initial, onSave, saveLabel, title }: Props) {
   const [desc, setDesc] = useState("");
   const [amount, setAmount] = useState<string>("");
