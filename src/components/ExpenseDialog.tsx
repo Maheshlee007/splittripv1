@@ -159,7 +159,8 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
       splitMode: mode,
       splits,
       billImage,
-    });
+      date: fromDateInput(expenseDate, initial?.date ?? initial?.createdAt ?? Date.now()),
+    } as any);
     onOpenChange(false);
   };
 
