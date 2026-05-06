@@ -5,12 +5,29 @@ import LZString from "lz-string";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Textarea } from "@/components/ui/textarea";
 import { createManualOffer, acceptManualOffer } from "@/lib/sync";
-import { Camera, Copy, RefreshCw } from "lucide-react";
+import { Camera, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
 type Mode = "host" | "guest";
+
+function buildUrl(groupId: string, kind: "o" | "a", sdp: string) {
+  const compressed = LZString.compressToEncodedURIComponent(sdp);
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+  // Keeping URL short: trip + code + sdp. The trip code IS the symmetric key.
+  return `${origin}/?trip=${groupId}&code=${groupId}&kind=${kind}&sdp=${compressed}`;
+}
+function parseUrl(text: string): { kind: "o" | "a"; sdp: string } | null {
+  try {
+    const u = new URL(text);
+    const sdp = u.searchParams.get("sdp");
+    const kind = u.searchParams.get("kind") as "o" | "a" | null;
+    if (!sdp || (kind !== "o" && kind !== "a")) return null;
+    const decoded = LZString.decompressFromEncodedURIComponent(sdp);
+    if (!decoded) return null;
+    return { kind, sdp: decoded };
+  } catch { return null; }
+}
 
 export function QRHandshakeDialog({
   open,
@@ -22,16 +39,14 @@ export function QRHandshakeDialog({
   groupId: string;
 }) {
   const [mode, setMode] = useState<Mode>("host");
-  const [offerQR, setOfferQR] = useState("");
-  const [offerStr, setOfferStr] = useState("");
-  const [answerStr, setAnswerStr] = useState("");
+  const [qrImg, setQrImg] = useState("");
   const [scannerOn, setScannerOn] = useState(false);
   const applyAnswerRef = useRef<((s: string) => Promise<void>) | null>(null);
   const scannerRef = useRef<Html5Qrcode | null>(null);
 
   useEffect(() => {
     if (!open) {
-      setOfferQR(""); setOfferStr(""); setAnswerStr(""); setScannerOn(false);
+      setQrImg(""); setScannerOn(false);
       applyAnswerRef.current = null;
       scannerRef.current?.stop().catch(() => {});
       return;
@@ -41,15 +56,13 @@ export function QRHandshakeDialog({
   }, [open, mode]);
 
   const generateOffer = async () => {
-    setOfferQR(""); setOfferStr("");
+    setQrImg("");
     try {
       const { sdp, applyAnswer } = await createManualOffer(groupId);
       applyAnswerRef.current = applyAnswer;
-      const compressed = LZString.compressToEncodedURIComponent(sdp);
-      const payload = `splittrip:o:${groupId}:${compressed}`;
-      setOfferStr(payload);
-      const qr = await QRCode.toDataURL(payload, { width: 280, margin: 1, errorCorrectionLevel: "L" });
-      setOfferQR(qr);
+      const url = buildUrl(groupId, "o", sdp);
+      const qr = await QRCode.toDataURL(url, { width: 300, margin: 1, errorCorrectionLevel: "L" });
+      setQrImg(qr);
     } catch (e: any) {
       toast.error(e?.message || "Couldn't create offer");
     }
@@ -79,12 +92,10 @@ export function QRHandshakeDialog({
   };
 
   const handleScannedAnswer = async (text: string) => {
-    if (!text.startsWith("splittrip:a:")) { toast.error("Not an answer QR"); return; }
-    const compressed = text.split(":").slice(3).join(":");
-    const sdp = LZString.decompressFromEncodedURIComponent(compressed);
-    if (!sdp) { toast.error("Bad QR data"); return; }
+    const parsed = parseUrl(text);
+    if (!parsed || parsed.kind !== "a") { toast.error("Not an answer QR"); return; }
     try {
-      await applyAnswerRef.current?.(sdp);
+      await applyAnswerRef.current?.(parsed.sdp);
       toast.success("Connected!");
       onOpenChange(false);
     } catch (e: any) {
@@ -93,17 +104,13 @@ export function QRHandshakeDialog({
   };
 
   const handleScannedOffer = async (text: string) => {
-    if (!text.startsWith("splittrip:o:")) { toast.error("Not an offer QR"); return; }
-    const compressed = text.split(":").slice(3).join(":");
-    const sdp = LZString.decompressFromEncodedURIComponent(compressed);
-    if (!sdp) { toast.error("Bad QR data"); return; }
+    const parsed = parseUrl(text);
+    if (!parsed || parsed.kind !== "o") { toast.error("Not an offer QR"); return; }
     try {
-      const answer = await acceptManualOffer(groupId, sdp);
-      const compressedA = LZString.compressToEncodedURIComponent(answer);
-      const payload = `splittrip:a:${groupId}:${compressedA}`;
-      setAnswerStr(payload);
-      const qr = await QRCode.toDataURL(payload, { width: 280, margin: 1, errorCorrectionLevel: "L" });
-      setOfferQR(qr);
+      const answer = await acceptManualOffer(groupId, parsed.sdp);
+      const url = buildUrl(groupId, "a", answer);
+      const qr = await QRCode.toDataURL(url, { width: 300, margin: 1, errorCorrectionLevel: "L" });
+      setQrImg(qr);
       toast.success("Show this QR back to the host");
     } catch (e: any) {
       toast.error(e?.message || "Failed to accept offer");
@@ -117,7 +124,7 @@ export function QRHandshakeDialog({
           <DialogTitle>Connect via QR (offline)</DialogTitle>
         </DialogHeader>
         <p className="text-xs text-muted-foreground">
-          Use this when normal sync isn't connecting. Both phones must be online once for STUN; after that the connection is direct.
+          Use this when normal sync isn't connecting. The QR contains a deep-link to the app — Google Lens / iOS Camera will open it directly.
         </p>
         <Tabs value={mode} onValueChange={(v) => setMode(v as Mode)}>
           <TabsList className="grid w-full grid-cols-2">
@@ -130,10 +137,10 @@ export function QRHandshakeDialog({
               <li>They scan it & show you their answer QR.</li>
               <li>Tap "Scan answer" below.</li>
             </ol>
-            {offerQR ? (
-              <img src={offerQR} alt="Offer" className="mx-auto h-56 w-56 rounded-xl border bg-white p-2" />
+            {qrImg ? (
+              <img src={qrImg} alt="Offer QR" className="mx-auto h-60 w-60 rounded-xl border bg-white p-2" />
             ) : (
-              <div className="grid h-56 place-items-center rounded-xl bg-secondary text-xs text-muted-foreground">Generating…</div>
+              <div className="grid h-60 place-items-center rounded-xl bg-secondary text-xs text-muted-foreground">Generating…</div>
             )}
             <div className="flex gap-2">
               <Button variant="ghost" size="sm" onClick={generateOffer}><RefreshCw className="h-3.5 w-3.5" /> Regenerate</Button>
@@ -147,8 +154,8 @@ export function QRHandshakeDialog({
               <li>Tap "Scan offer" and scan host's QR.</li>
               <li>Show the generated answer QR back to the host.</li>
             </ol>
-            {answerStr && offerQR ? (
-              <img src={offerQR} alt="Answer" className="mx-auto h-56 w-56 rounded-xl border bg-white p-2" />
+            {qrImg ? (
+              <img src={qrImg} alt="Answer QR" className="mx-auto h-60 w-60 rounded-xl border bg-white p-2" />
             ) : (
               <Button size="sm" className="w-full gap-1" onClick={() => startScanner(handleScannedOffer)}>
                 <Camera className="h-4 w-4" /> Scan host's offer
