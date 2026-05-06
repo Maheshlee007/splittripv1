@@ -33,6 +33,8 @@ export interface Expense {
   /** optional dataURL of the bill photo */
   billImage?: string;
   createdAt: number;
+  /** the date the expense actually occurred — defaults to createdAt */
+  date?: number;
   createdBy: string;
   updatedAt: number;
 }

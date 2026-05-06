@@ -50,6 +50,19 @@ async function fileToDataUrl(file: File, maxW = 1280): Promise<string> {
   }
 }
 
+function toDateInput(ts: number): string {
+  const d = new Date(ts);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+function fromDateInput(s: string, fallback: number): number {
+  if (!s) return fallback;
+  const [y, m, d] = s.split("-").map(Number);
+  const dt = new Date(fallback);
+  dt.setFullYear(y, (m || 1) - 1, d || 1);
+  return dt.getTime();
+}
+
 export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initial, onSave, saveLabel, title }: Props) {
   const [desc, setDesc] = useState("");
   const [amount, setAmount] = useState<string>("");
@@ -60,6 +73,7 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
   const [splitValues, setSplitValues] = useState<Record<string, string>>({});
   const [note, setNote] = useState("");
   const [billImage, setBillImage] = useState<string | undefined>();
+  const [expenseDate, setExpenseDate] = useState<string>(toDateInput(Date.now()));
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -74,6 +88,7 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
         setSplitValues(Object.fromEntries(initial.splits.map((s) => [s.memberId, String(s.value)])));
         setNote(initial.note ?? "");
         setBillImage(initial.billImage);
+        setExpenseDate(toDateInput(initial.createdAt));
       } else {
         setDesc("");
         setAmount("");
@@ -84,6 +99,7 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
         setSplitValues({});
         setNote("");
         setBillImage(undefined);
+        setExpenseDate(toDateInput(Date.now()));
       }
     }
   }, [open, initial, defaultPaidBy, group.members]);
@@ -143,7 +159,8 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
       splitMode: mode,
       splits,
       billImage,
-    });
+      date: fromDateInput(expenseDate, initial?.date ?? initial?.createdAt ?? Date.now()),
+    } as any);
     onOpenChange(false);
   };
 
@@ -181,6 +198,10 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
                   <option key={m.id} value={m.id}>{m.name}</option>
                 ))}
               </select>
+            </div>
+            <div className="sm:col-span-2">
+              <Label>Date</Label>
+              <Input type="date" value={expenseDate} onChange={(e) => setExpenseDate(e.target.value)} />
             </div>
           </div>
 

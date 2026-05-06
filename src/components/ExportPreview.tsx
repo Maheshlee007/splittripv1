@@ -37,14 +37,20 @@ export function ExportPreview({
     } else if (kind === "whatsapp") {
       setText(buildWhatsAppText(group));
     } else if (kind === "image" && imageNode) {
+      // Capture the inner table at its full natural width so all member columns are included
+      const target = imageNode.querySelector("table") as HTMLElement | null ?? imageNode;
+      const w = Math.max(target.scrollWidth, target.offsetWidth);
+      const h = Math.max(target.scrollHeight, target.offsetHeight);
       import("html-to-image").then(({ toPng }) =>
-        toPng(imageNode, {
+        toPng(target, {
           pixelRatio: 2,
           cacheBust: true,
           backgroundColor: getComputedStyle(document.body).backgroundColor,
-          width: imageNode.scrollWidth,
-          height: imageNode.scrollHeight,
-          style: { overflow: "visible", maxHeight: "none" },
+          width: w,
+          height: h,
+          canvasWidth: w,
+          canvasHeight: h,
+          style: { overflow: "visible", maxHeight: "none", maxWidth: "none", width: `${w}px`, height: `${h}px` },
         })
           .then(setImgUrl)
           .catch(() => toast.error("Image render failed"))
@@ -70,14 +76,24 @@ export function ExportPreview({
 
         <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-border bg-secondary/30">
           {kind === "pdf" && pdfUrl && (
-            <object data={pdfUrl} type="application/pdf" className="h-[65vh] w-full bg-white">
-              <div className="grid h-48 place-items-center p-4 text-center text-xs text-muted-foreground">
-                PDF preview is blocked on this phone. Use Download PDF below.
+            <>
+              <object data={pdfUrl} type="application/pdf" className="hidden h-[65vh] w-full bg-white sm:block">
+                <div className="grid h-48 place-items-center p-4 text-center text-xs text-muted-foreground">
+                  Inline PDF preview blocked. Use the buttons below.
+                </div>
+              </object>
+              <div className="grid place-items-center p-6 sm:hidden">
+                <p className="mb-3 text-center text-xs text-muted-foreground">
+                  Inline PDF preview isn't supported on this phone. Open or download below.
+                </p>
+                <Button asChild size="sm" variant="secondary">
+                  <a href={pdfUrl} target="_blank" rel="noreferrer">Open PDF in new tab</a>
+                </Button>
               </div>
-            </object>
+            </>
           )}
           {kind === "image" && (
-            imgUrl ? <img src={imgUrl} alt="preview" className="mx-auto max-w-none" /> :
+            imgUrl ? <img src={imgUrl} alt="preview" className="block max-w-full" /> :
             <div className="grid h-48 place-items-center text-xs text-muted-foreground">Rendering…</div>
           )}
           {kind === "whatsapp" && (
