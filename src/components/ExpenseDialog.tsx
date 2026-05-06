@@ -60,6 +60,7 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
   const [splitValues, setSplitValues] = useState<Record<string, string>>({});
   const [note, setNote] = useState("");
   const [billImage, setBillImage] = useState<string | undefined>();
+  const [expenseDate, setExpenseDate] = useState<string>(toDateInput(Date.now()));
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -74,6 +75,7 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
         setSplitValues(Object.fromEntries(initial.splits.map((s) => [s.memberId, String(s.value)])));
         setNote(initial.note ?? "");
         setBillImage(initial.billImage);
+        setExpenseDate(toDateInput(initial.createdAt));
       } else {
         setDesc("");
         setAmount("");
@@ -84,6 +86,7 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
         setSplitValues({});
         setNote("");
         setBillImage(undefined);
+        setExpenseDate(toDateInput(Date.now()));
       }
     }
   }, [open, initial, defaultPaidBy, group.members]);
