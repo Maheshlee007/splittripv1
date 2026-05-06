@@ -406,7 +406,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
     (groupId: string, exp: Expense) => {
       updateGroup(groupId, (g) => ({
         ...g,
-        expenses: g.expenses.map((x) => (x.id === exp.id ? { ...exp, updatedAt: Date.now() } : x)),
+        expenses: g.expenses.map((x) => (x.id === exp.id ? { ...exp, date: (exp as any).date ?? exp.createdAt, updatedAt: Date.now() } : x)),
       }));
     },
     [updateGroup]
