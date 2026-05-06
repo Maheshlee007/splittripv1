@@ -37,14 +37,20 @@ export function ExportPreview({
     } else if (kind === "whatsapp") {
       setText(buildWhatsAppText(group));
     } else if (kind === "image" && imageNode) {
+      // Capture the inner table at its full natural width so all member columns are included
+      const target = imageNode.querySelector("table") as HTMLElement | null ?? imageNode;
+      const w = Math.max(target.scrollWidth, target.offsetWidth);
+      const h = Math.max(target.scrollHeight, target.offsetHeight);
       import("html-to-image").then(({ toPng }) =>
-        toPng(imageNode, {
+        toPng(target, {
           pixelRatio: 2,
           cacheBust: true,
           backgroundColor: getComputedStyle(document.body).backgroundColor,
-          width: imageNode.scrollWidth,
-          height: imageNode.scrollHeight,
-          style: { overflow: "visible", maxHeight: "none" },
+          width: w,
+          height: h,
+          canvasWidth: w,
+          canvasHeight: h,
+          style: { overflow: "visible", maxHeight: "none", maxWidth: "none", width: `${w}px`, height: `${h}px` },
         })
           .then(setImgUrl)
           .catch(() => toast.error("Image render failed"))
