@@ -128,21 +128,22 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
     document.documentElement.classList.toggle("dark", resolvedTheme === "dark");
   }, [resolvedTheme]);
 
-  // sync wiring per group
+  // sync wiring per group (skip archived — they unsubscribe from the broker)
   useEffect(() => {
     if (!ready) return;
-    const ids = new Set(groups.map((g) => g.id));
+    const liveIds = groups.filter((g) => !g.archived).map((g) => g.id);
     for (const g of groups) {
+      if (g.archived) { disconnectGroup(g.id); continue; }
       connectGroup(g.id, {
         onPeers: (n) => setPeers((p) => ({ ...p, [g.id]: n })),
       });
-      window.setTimeout(() => broadcastGroup(g), 250);
+      window.setTimeout(() => broadcastGroup(g), 400);
     }
     return () => {
-      for (const id of ids) disconnectGroup(id);
+      for (const id of liveIds) disconnectGroup(id);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, groups.map((g) => g.id).join(",")]);
+  }, [ready, groups.map((g) => `${g.id}:${g.archived ? 1 : 0}`).join(",")]);
 
   // listen for remote updates
   useEffect(() => {
