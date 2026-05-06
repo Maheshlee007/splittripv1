@@ -199,6 +199,10 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
                 ))}
               </select>
             </div>
+            <div className="sm:col-span-2">
+              <Label>Date</Label>
+              <Input type="date" value={expenseDate} onChange={(e) => setExpenseDate(e.target.value)} />
+            </div>
           </div>
 
           <div>
