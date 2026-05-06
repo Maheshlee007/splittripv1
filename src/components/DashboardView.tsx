@@ -44,7 +44,7 @@ export const DashboardView = forwardRef<HTMLDivElement, { group: Group }>(({ gro
         {rows.length === 0 ? (
           <p className="text-xs text-muted-foreground">No expenses yet.</p>
         ) : (
-          <div className="max-h-[70vh] overflow-auto rounded-lg border border-border/60">
+          <div data-capturable className="max-h-[70vh] overflow-auto rounded-lg border border-border/60">
             <table className="w-full min-w-[680px] border-collapse text-xs">
               <thead>
                 <tr className="sticky top-0 z-10 border-b border-border bg-secondary text-left text-[10px] uppercase tracking-wider text-muted-foreground">
