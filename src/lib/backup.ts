@@ -27,10 +27,14 @@ export async function downloadBackup(): Promise<void> {
 
 export async function restoreBackup(file: File): Promise<{ groups: number }> {
   const text = await file.text();
-  const data = JSON.parse(text) as FullBackup;
-  if (!data || data.app !== "splittrip" || !Array.isArray(data.groups)) {
-    throw new Error("Not a SplitTrip backup file");
+  let raw: unknown;
+  try { raw = JSON.parse(text); } catch { throw new Error("Not valid JSON"); }
+  const { safeParseBackup } = await import("./schema");
+  const parsed = safeParseBackup(raw);
+  if (!parsed.success) {
+    throw new Error("Not a SplitTrip backup file: " + (parsed.error.issues[0]?.message ?? "schema error"));
   }
+  const data = parsed.data as unknown as FullBackup;
   if (data.profile) await saveProfile(data.profile);
   for (const g of data.groups) await saveGroup(g);
   return { groups: data.groups.length };
