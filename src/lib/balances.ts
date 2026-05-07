@@ -88,8 +88,10 @@ export function buildMemberLedger(group: Group): MemberLedgerRow[] {
   }
 
   for (const st of group.settlements) {
-    if (rows[st.fromId]) rows[st.fromId].settled += st.amount;
-    if (rows[st.toId]) rows[st.toId].settled -= st.amount;
+    const amt = effectiveSettlementAmount(st);
+    if (amt <= 0) continue;
+    if (rows[st.fromId]) rows[st.fromId].settled += amt;
+    if (rows[st.toId]) rows[st.toId].settled -= amt;
   }
 
   return Object.values(rows).map((r) => {
