@@ -90,6 +90,8 @@ export interface Group {
   ownerId: string;
   archived?: boolean;
   archivedAt?: number;
+  /** Random per-trip token used in shareable URLs (not the human code). */
+  inviteToken?: string;
   members: Member[];
   expenses: Expense[];
   requests: ExpenseRequest[];
