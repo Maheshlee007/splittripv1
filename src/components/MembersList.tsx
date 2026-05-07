@@ -129,21 +129,31 @@ export function MembersList({ group }: { group: Group }) {
                     </div>
                   )}
                 </div>
-                <button
-                  onClick={() => cycleRole(m)}
-                  disabled={!isOwner || isGroupOwner}
-                  title={isOwner && !isGroupOwner ? "Tap to toggle admin" : ""}
-                  className={`flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-medium ${
-                    isGroupOwner
-                      ? "bg-warning/15 text-warning"
-                      : m.role === "admin"
-                      ? "bg-primary/15 text-primary"
-                      : "bg-secondary text-muted-foreground"
-                  } ${isOwner && !isGroupOwner ? "cursor-pointer hover:opacity-80" : "cursor-default"}`}
-                >
-                  {isGroupOwner ? <Crown className="h-3 w-3" /> : m.role === "admin" ? <Shield className="h-3 w-3" /> : <UserIcon className="h-3 w-3" />}
-                  {isGroupOwner ? "owner" : m.role}
-                </button>
+                {isGroupOwner ? (
+                  <span className="flex items-center gap-1 rounded-full bg-warning/15 px-2 py-1 text-[10px] font-medium text-warning">
+                    <Crown className="h-3 w-3" /> owner
+                  </span>
+                ) : isOwner ? (
+                  <div className="inline-flex overflow-hidden rounded-full border border-border text-[10px]">
+                    <button
+                      onClick={() => m.role !== "member" && setRole(group.id, m.id, "member")}
+                      className={`flex items-center gap-1 px-2 py-1 ${m.role === "member" ? "bg-secondary text-foreground" : "text-muted-foreground hover:bg-secondary/50"}`}
+                    >
+                      <UserIcon className="h-3 w-3" /> member
+                    </button>
+                    <button
+                      onClick={() => m.role !== "admin" && setRole(group.id, m.id, "admin")}
+                      className={`flex items-center gap-1 px-2 py-1 ${m.role === "admin" ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-secondary/50"}`}
+                    >
+                      <Shield className="h-3 w-3" /> admin
+                    </button>
+                  </div>
+                ) : (
+                  <span className={`flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-medium ${m.role === "admin" ? "bg-primary/15 text-primary" : "bg-secondary text-muted-foreground"}`}>
+                    {m.role === "admin" ? <Shield className="h-3 w-3" /> : <UserIcon className="h-3 w-3" />}
+                    {m.role}
+                  </span>
+                )}
                 {canManage && m.leaveRequested && !isGroupOwner && (
                   <Button size="sm" variant="ghost" className="h-7 text-[11px]" onClick={() => clearLeaveRequest(group.id, m.id)}>Keep</Button>
                 )}
