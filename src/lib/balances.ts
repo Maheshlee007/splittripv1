@@ -54,12 +54,22 @@ export function computeBalances(group: Group): Record<string, number> {
     }
   }
   for (const st of group.settlements) {
+    const amt = effectiveSettlementAmount(st);
+    if (amt <= 0) continue;
     if (!net[st.fromId] && net[st.fromId] !== 0) net[st.fromId] = 0;
     if (!net[st.toId] && net[st.toId] !== 0) net[st.toId] = 0;
-    net[st.fromId] += st.amount;
-    net[st.toId] -= st.amount;
+    net[st.fromId] += amt;
+    net[st.toId] -= amt;
   }
   return net;
+}
+
+function effectiveSettlementAmount(st: Settlement): number {
+  // Plain settlements (no status) keep their amount.
+  // Claim-flow settlements only count when approved/partial.
+  if (!st.status) return st.amount;
+  if (st.status === "approved" || st.status === "partial") return st.approvedAmount ?? st.amount;
+  return 0;
 }
 
 export function buildMemberLedger(group: Group): MemberLedgerRow[] {
