@@ -165,6 +165,18 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
     return off;
   }, [profile]);
 
+  // Owner kicks a member -> remove ourselves locally and disconnect.
+  useEffect(() => {
+    const off = onKick((groupId, memberId) => {
+      if (memberId !== profile.id) return;
+      disconnectGroup(groupId);
+      deleteGroup(groupId);
+      setGroups((curr) => curr.filter((g) => g.id !== groupId));
+    });
+    return off;
+  }, [profile.id]);
+
+
   const persist = useCallback((g: Group, broadcast = true) => {
     saveGroup(g);
     if (broadcast) broadcastGroup(g);
