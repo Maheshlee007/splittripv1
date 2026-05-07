@@ -43,6 +43,10 @@ interface AppStoreValue {
   rejectRequest: (groupId: string, requestId: string, note?: string) => void;
   /* settlement */
   addSettlement: (groupId: string, s: Omit<Settlement, "id" | "createdAt" | "createdBy">) => void;
+  claimPayment: (groupId: string, opts: { fromId: string; toId: string; amount: number; currency: string; note?: string }) => void;
+  reviewClaim: (groupId: string, claimId: string, decision: { approve: boolean; amount?: number; note?: string }) => void;
+  approveLeave: (groupId: string, memberId: string) => void;
+  regenerateInviteToken: (groupId: string) => void;
   /* sync */
   peers: Record<string, number>;
   myMemberId: (groupId: string) => string | undefined;
