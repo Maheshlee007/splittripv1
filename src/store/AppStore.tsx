@@ -551,7 +551,9 @@ export function useApp() {
   return v;
 }
 
-/** Merge two snapshots of the same group: union by id, prefer newer updatedAt. */
+/** Merge two snapshots of the same group: union by id, prefer newer updatedAt.
+ *  Security: role/status are LOCKED to local values when a local member exists,
+ *  so a peer cannot promote themselves via a crafted snapshot. */
 function mergeGroups(a: Group, b: Group): Group {
   const merged: Group = {
     ...a,
@@ -560,12 +562,27 @@ function mergeGroups(a: Group, b: Group): Group {
     currency: b.currency || a.currency,
     budget: b.budget ?? a.budget,
     ownerId: a.ownerId || b.ownerId,
-    members: mergeBy(a.members, b.members, (m) => m.id, (x, y) => ({ ...x, ...y })),
+    inviteToken: a.inviteToken || b.inviteToken,
+    archived: a.ownerId === a.ownerId ? (a.archived ?? b.archived) : a.archived,
+    archivedAt: a.archivedAt ?? b.archivedAt,
+    members: mergeBy(a.members, b.members, (m) => m.id, (x, y) => ({
+      ...y,
+      ...x,
+      // local wins on these privileged fields if local member exists
+      role: x.role,
+      status: x.status ?? y.status,
+      // contact info: prefer freshest non-empty
+      name: x.name || y.name,
+      upiId: x.upiId ?? y.upiId,
+      phone: x.phone ?? y.phone,
+    })),
     expenses: mergeBy(a.expenses, b.expenses, (m) => m.id, (x, y) => (y.updatedAt > x.updatedAt ? y : x)),
     requests: mergeBy(a.requests, b.requests, (m) => m.id, (x, y) =>
       (y.reviewedAt ?? y.requestedAt) > (x.reviewedAt ?? x.requestedAt) ? y : x
     ),
-    settlements: mergeBy(a.settlements, b.settlements, (m) => m.id, (x) => x),
+    settlements: mergeBy(a.settlements, b.settlements, (m) => m.id, (x, y) =>
+      ((y.reviewedAt ?? y.createdAt) > (x.reviewedAt ?? x.createdAt) ? y : x)
+    ),
   };
   return merged;
 }
