@@ -20,7 +20,7 @@ const StatusSchema = z.enum(["active", "pending"]).optional();
 const SplitModeSchema = z.enum(["equal", "shares", "exact", "percent"]);
 
 export const MemberSchema = z.object({
-  id: safeStr(64).min(1),
+  id: safeStr(64, 1),
   name: safeStr(80).default(""),
   phone: safeStr(40).optional(),
   upiId: safeStr(80).optional(),
@@ -94,7 +94,7 @@ const ActivitySchema = z.object({
 }).passthrough();
 
 export const GroupSchema = z.object({
-  id: safeStr(32).min(1),
+  id: safeStr(32, 1),
   name: safeStr(80),
   emoji: safeStr(8).default("🧳"),
   currency: safeStr(8),
