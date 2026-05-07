@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { customAlphabet, nanoid } from "nanoid";
 import { ActivityItem, Expense, ExpenseRequest, Group, Member, Profile, Settlement, Split, SplitMode } from "@/lib/types";
 import { loadGroups, loadProfile, loadTheme, saveGroup, saveProfile, saveTheme, deleteGroup, ThemePref } from "@/lib/storage";
-import { connectGroup, disconnectGroup, broadcastGroup, onRemoteGroup } from "@/lib/sync";
+import { connectGroup, disconnectGroup, broadcastGroup, broadcastKick, onRemoteGroup, onKick } from "@/lib/sync";
 
 const codeAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const newCode = customAlphabet(codeAlphabet, 6);
@@ -43,6 +43,10 @@ interface AppStoreValue {
   rejectRequest: (groupId: string, requestId: string, note?: string) => void;
   /* settlement */
   addSettlement: (groupId: string, s: Omit<Settlement, "id" | "createdAt" | "createdBy">) => void;
+  claimPayment: (groupId: string, opts: { fromId: string; toId: string; amount: number; currency: string; note?: string }) => void;
+  reviewClaim: (groupId: string, claimId: string, decision: { approve: boolean; amount?: number; note?: string }) => void;
+  approveLeave: (groupId: string, memberId: string) => void;
+  regenerateInviteToken: (groupId: string) => void;
   /* sync */
   peers: Record<string, number>;
   myMemberId: (groupId: string) => string | undefined;
@@ -165,6 +169,18 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
     return off;
   }, [profile]);
 
+  // Owner kicks a member -> remove ourselves locally and disconnect.
+  useEffect(() => {
+    const off = onKick((groupId, memberId) => {
+      if (memberId !== profile.id) return;
+      disconnectGroup(groupId);
+      deleteGroup(groupId);
+      setGroups((curr) => curr.filter((g) => g.id !== groupId));
+    });
+    return off;
+  }, [profile.id]);
+
+
   const persist = useCallback((g: Group, broadcast = true) => {
     saveGroup(g);
     if (broadcast) broadcastGroup(g);
@@ -222,6 +238,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
         currency,
         createdAt: Date.now(),
         ownerId: profile.id,
+        inviteToken: nanoid(22),
         members: [{
           id: profile.id,
           name: profile.name || "Me",
@@ -358,8 +375,13 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
   );
 
   const setArchived = useCallback((id: string, archived: boolean) => {
+    if (archived) disconnectGroup(id);
     updateGroup(id, (g) => withActivity({ ...g, archived, archivedAt: archived ? Date.now() : undefined }, activity(profile, "archive", archived ? "archived the trip" : "restored the trip")));
   }, [profile, updateGroup]);
+
+  const regenerateInviteToken = useCallback((groupId: string) => {
+    updateGroup(groupId, (g) => ({ ...g, inviteToken: nanoid(22) }));
+  }, [updateGroup]);
 
   const setRole = useCallback(
     (groupId: string, memberId: string, role: Member["role"]) => {
@@ -478,6 +500,66 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
     [profile.id, updateGroup]
   );
 
+  /** Member claims they paid the owner. Creates a pending settlement awaiting owner verification. */
+  const claimPayment = useCallback(
+    (groupId: string, opts: { fromId: string; toId: string; amount: number; currency: string; note?: string }) => {
+      const st: Settlement = {
+        id: nanoid(),
+        fromId: opts.fromId,
+        toId: opts.toId,
+        amount: 0, // not counted until approved
+        claimedAmount: opts.amount,
+        currency: opts.currency,
+        note: opts.note,
+        createdAt: Date.now(),
+        createdBy: profile.id,
+        status: "pending",
+      };
+      updateGroup(groupId, (g) => withActivity(
+        { ...g, settlements: [st, ...g.settlements] },
+        activity(profile, "settlement", `claimed paid ${opts.amount} (awaiting verification)`)
+      ));
+    },
+    [profile, updateGroup]
+  );
+
+  const reviewClaim = useCallback(
+    (groupId: string, claimId: string, decision: { approve: boolean; amount?: number; note?: string }) => {
+      updateGroup(groupId, (g) => {
+        const next = g.settlements.map((s) => {
+          if (s.id !== claimId || s.status === undefined) return s;
+          if (!decision.approve) {
+            return { ...s, status: "rejected" as const, reviewedBy: profile.id, reviewedAt: Date.now(), note: decision.note ?? s.note };
+          }
+          const claim = s.claimedAmount ?? 0;
+          const approved = decision.amount ?? claim;
+          return {
+            ...s,
+            amount: approved,
+            approvedAmount: approved,
+            status: (approved < claim ? "partial" : "approved") as "partial" | "approved",
+            reviewedBy: profile.id,
+            reviewedAt: Date.now(),
+            note: decision.note ?? s.note,
+          };
+        });
+        return withActivity({ ...g, settlements: next }, activity(profile, "settlement", decision.approve ? "verified a payment" : "rejected a payment claim"));
+      });
+    },
+    [profile, updateGroup]
+  );
+
+  /** Owner/admin approves a member's leave request: kicks via P2P then removes locally. */
+  const approveLeave = useCallback(
+    (groupId: string, memberId: string) => {
+      try { broadcastKick(groupId, memberId); } catch { /* */ }
+      removeMember(groupId, memberId);
+    },
+    [removeMember]
+  );
+
+
+
   const myMemberId = useCallback(
     (groupId: string) => {
       const g = groupsRef.current.find((x) => x.id === groupId);
@@ -529,6 +611,10 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       approveRequest,
       rejectRequest,
       addSettlement,
+      claimPayment,
+      reviewClaim,
+      approveLeave,
+      regenerateInviteToken,
       peers,
       myMemberId,
       myRole,
@@ -538,7 +624,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       groups, getGroup, createGroup, joinGroup, removeGroup, setArchived, updateGroup, importGroup,
       addMember, updateMember, removeMember, setRole, approveMember, rejectMember, requestLeave, clearLeaveRequest,
       addExpense, updateExpense, removeExpense,
-      submitRequest, approveRequest, rejectRequest, addSettlement, peers, myMemberId, myRole,
+      submitRequest, approveRequest, rejectRequest, addSettlement, claimPayment, reviewClaim, approveLeave, regenerateInviteToken, peers, myMemberId, myRole,
     ]
   );
 
@@ -551,7 +637,9 @@ export function useApp() {
   return v;
 }
 
-/** Merge two snapshots of the same group: union by id, prefer newer updatedAt. */
+/** Merge two snapshots of the same group: union by id, prefer newer updatedAt.
+ *  Security: role/status are LOCKED to local values when a local member exists,
+ *  so a peer cannot promote themselves via a crafted snapshot. */
 function mergeGroups(a: Group, b: Group): Group {
   const merged: Group = {
     ...a,
@@ -560,12 +648,27 @@ function mergeGroups(a: Group, b: Group): Group {
     currency: b.currency || a.currency,
     budget: b.budget ?? a.budget,
     ownerId: a.ownerId || b.ownerId,
-    members: mergeBy(a.members, b.members, (m) => m.id, (x, y) => ({ ...x, ...y })),
+    inviteToken: a.inviteToken || b.inviteToken,
+    archived: a.archived ?? b.archived,
+    archivedAt: a.archivedAt ?? b.archivedAt,
+    members: mergeBy(a.members, b.members, (m) => m.id, (x, y) => ({
+      ...y,
+      ...x,
+      // local wins on these privileged fields if local member exists
+      role: x.role,
+      status: x.status ?? y.status,
+      // contact info: prefer freshest non-empty
+      name: x.name || y.name,
+      upiId: x.upiId ?? y.upiId,
+      phone: x.phone ?? y.phone,
+    })),
     expenses: mergeBy(a.expenses, b.expenses, (m) => m.id, (x, y) => (y.updatedAt > x.updatedAt ? y : x)),
     requests: mergeBy(a.requests, b.requests, (m) => m.id, (x, y) =>
       (y.reviewedAt ?? y.requestedAt) > (x.reviewedAt ?? x.requestedAt) ? y : x
     ),
-    settlements: mergeBy(a.settlements, b.settlements, (m) => m.id, (x) => x),
+    settlements: mergeBy(a.settlements, b.settlements, (m) => m.id, (x, y) =>
+      ((y.reviewedAt ?? y.createdAt) > (x.reviewedAt ?? x.createdAt) ? y : x)
+    ),
   };
   return merged;
 }

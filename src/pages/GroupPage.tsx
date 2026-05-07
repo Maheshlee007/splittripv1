@@ -131,7 +131,7 @@ export default function GroupPage() {
         }
       />
 
-      <div className="mx-auto max-w-3xl px-4 pt-4 pb-32 md:pb-12">
+      <div className="mx-auto w-full max-w-3xl px-4 pt-4 pb-32 md:max-w-5xl md:pb-16 xl:max-w-6xl">
         {selfPending && (
           <div className="mb-3 rounded-xl border border-warning/30 bg-warning/5 p-3 text-xs text-warning">
             ⏳ Waiting for the trip owner to approve your join request. You'll see live updates once approved.
@@ -160,28 +160,30 @@ export default function GroupPage() {
         </div>
 
         <Tabs defaultValue={initialTab}>
-          <TabsList className="grid w-full grid-cols-6 overflow-x-auto">
-            <TabsTrigger value="expenses">Expenses</TabsTrigger>
-            <TabsTrigger value="balances">Balances</TabsTrigger>
-            <TabsTrigger value="dashboard"><BarChart3 className="h-3.5 w-3.5" /></TabsTrigger>
-            <TabsTrigger value="activity"><Activity className="h-3.5 w-3.5" /></TabsTrigger>
-            <TabsTrigger value="requests">
-              Requests
-              {group.requests.filter((r) => r.status === "pending").length > 0 && (
-                <span className="ml-1.5 rounded-full bg-warning px-1.5 text-[10px] text-warning-foreground">
-                  {group.requests.filter((r) => r.status === "pending").length}
-                </span>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="members">
-              Members
-              {group.members.filter((m) => m.status === "pending").length > 0 && (
-                <span className="ml-1.5 rounded-full bg-warning px-1.5 text-[10px] text-warning-foreground">
-                  {group.members.filter((m) => m.status === "pending").length}
-                </span>
-              )}
-            </TabsTrigger>
-          </TabsList>
+          <div className="-mx-1 overflow-x-auto pb-1">
+            <TabsList className="inline-flex w-max min-w-full gap-1 px-1">
+              <TabsTrigger value="expenses" className="shrink-0 px-3">Expenses</TabsTrigger>
+              <TabsTrigger value="balances" className="shrink-0 px-3">Balances</TabsTrigger>
+              <TabsTrigger value="dashboard" className="shrink-0 px-3"><BarChart3 className="h-3.5 w-3.5" /></TabsTrigger>
+              <TabsTrigger value="activity" className="shrink-0 px-3"><Activity className="h-3.5 w-3.5" /></TabsTrigger>
+              <TabsTrigger value="requests" className="shrink-0 px-3">
+                Requests
+                {(group.requests.filter((r) => r.status === "pending").length + group.settlements.filter((s) => s.status === "pending").length) > 0 && (
+                  <span className="ml-1.5 rounded-full bg-warning px-1.5 text-[10px] text-warning-foreground">
+                    {group.requests.filter((r) => r.status === "pending").length + group.settlements.filter((s) => s.status === "pending").length}
+                  </span>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="members" className="shrink-0 px-3">
+                Members
+                {group.members.filter((m) => m.status === "pending").length > 0 && (
+                  <span className="ml-1.5 rounded-full bg-warning px-1.5 text-[10px] text-warning-foreground">
+                    {group.members.filter((m) => m.status === "pending").length}
+                  </span>
+                )}
+              </TabsTrigger>
+            </TabsList>
+          </div>
           <TabsContent value="expenses" className="pt-4">
             <ExpensesList group={group} />
           </TabsContent>

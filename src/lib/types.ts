@@ -61,6 +61,14 @@ export interface Settlement {
   note?: string;
   createdAt: number;
   createdBy: string;
+  /** Payment-claim verification flow. Owner approves member's "I paid you" claim. */
+  status?: "pending" | "approved" | "rejected" | "partial";
+  /** Amount the member claims to have paid (before owner verification). */
+  claimedAmount?: number;
+  /** Amount the owner has actually verified (used by Balances). */
+  approvedAmount?: number;
+  reviewedBy?: string;
+  reviewedAt?: number;
 }
 
 export interface ActivityItem {
@@ -82,6 +90,8 @@ export interface Group {
   ownerId: string;
   archived?: boolean;
   archivedAt?: number;
+  /** Random per-trip token used in shareable URLs (not the human code). */
+  inviteToken?: string;
   members: Member[];
   expenses: Expense[];
   requests: ExpenseRequest[];

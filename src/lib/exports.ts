@@ -178,9 +178,12 @@ export function exportJSON(g: Group): void {
 
 export async function importJSON(file: File): Promise<Group> {
   const text = await file.text();
-  const g = JSON.parse(text) as Group;
-  if (!g || typeof g !== "object" || !g.id || !Array.isArray(g.members)) {
-    throw new Error("Invalid SplitTrip JSON");
+  let raw: unknown;
+  try { raw = JSON.parse(text); } catch { throw new Error("Not valid JSON"); }
+  const { safeParseGroup } = await import("./schema");
+  const parsed = safeParseGroup(raw);
+  if (!parsed.success) {
+    throw new Error("Invalid SplitTrip JSON: " + (parsed.error.issues[0]?.message ?? "schema error"));
   }
-  return g;
+  return parsed.data as unknown as Group;
 }

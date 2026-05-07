@@ -1,7 +1,7 @@
 /**
  * SplitTrip sync — native WebRTC mesh, MQTT signaling (HiveMQ public broker),
- * AES-encrypted payloads (the trip code is the shared secret), and an offline
- * QR-handshake fallback (compressed SDPs via lz-string, done by callers).
+ * AES-encrypted payloads with derived key + hashed topic, schema-validated
+ * snapshots, and an offline QR-handshake fallback.
  *
  * Public API kept identical so AppStore + components don't change.
  */
@@ -9,6 +9,8 @@ import mqtt, { type MqttClient } from "mqtt";
 import CryptoJS from "crypto-js";
 import { nanoid } from "nanoid";
 import type { Group } from "./types";
+import { deriveSignalKey, hashedTopicSegment, isHostCandidate } from "./crypto";
+import { safeParseGroup } from "./schema";
 
 export type SyncStatus = "connecting" | "signaling" | "connected" | "offline";
 
@@ -21,13 +23,18 @@ const ICE_SERVERS: RTCIceServer[] = [
   { urls: "stun:stun4.l.google.com:19302" },
 ];
 
-type SignalKind = "hello" | "bye" | "offer" | "answer" | "ice";
+const DEBUG = typeof window !== "undefined" && /[?&]debug=sync/.test(window.location.search);
+const dlog = (...a: unknown[]) => { if (DEBUG) console.log("[sync]", ...a); };
+
+type SignalKind = "hello" | "bye" | "offer" | "answer" | "ice" | "kick";
 interface Envelope {
   kind: SignalKind;
   from: string;
   to?: string;
   sdp?: string;
   candidate?: RTCIceCandidateInit;
+  /** for "kick": the memberId that was removed */
+  memberId?: string;
 }
 
 interface PeerLink {
@@ -58,14 +65,15 @@ interface Slot {
 const slots = new Map<string, Slot>();
 const remoteListeners = new Set<(g: Group) => void>();
 const statusListeners = new Set<(id: string, s: SyncStatus) => void>();
+const kickListeners = new Set<(groupId: string, memberId: string) => void>();
 
-const topicFor = (gid: string) => `splittrip/${gid.toUpperCase()}/signal`;
+const topicFor = (gid: string) => `splittrip/${hashedTopicSegment(gid)}/signal`;
 const myPeerId = () => `p-${nanoid(10)}`;
 
-function encrypt(secret: string, payload: any): string {
+function encrypt(secret: string, payload: unknown): string {
   return CryptoJS.AES.encrypt(JSON.stringify(payload), secret).toString();
 }
-function decrypt(secret: string, ciphertext: string): any | null {
+function decrypt(secret: string, ciphertext: string): unknown | null {
   try {
     const bytes = CryptoJS.AES.decrypt(ciphertext, secret);
     const text = bytes.toString(CryptoJS.enc.Utf8);
@@ -79,6 +87,7 @@ function setStatus(slot: Slot, s: SyncStatus) {
   slot.status = s;
   for (const fn of statusListeners) fn(slot.groupId, s);
   slot.onStatus?.(s);
+  dlog(slot.groupId, "status", s);
 }
 
 function emitPeers(slot: Slot) {
@@ -94,8 +103,14 @@ function publish(slot: Slot, env: Envelope) {
   try { slot.client.publish(slot.topic, encrypt(slot.secret, env), { qos: 0 }); } catch {}
 }
 
-function handleSnapshot(slot: Slot, g: Group) {
-  if (!g || g.id !== slot.groupId) return;
+function handleSnapshot(slot: Slot, raw: unknown) {
+  const parsed = safeParseGroup(raw);
+  if (!parsed.success) {
+    dlog("dropped invalid snapshot", parsed.error.issues.slice(0, 3));
+    return;
+  }
+  const g = parsed.data as unknown as Group;
+  if (g.id !== slot.groupId) return;
   slot.lastSnapshot = g;
   for (const fn of remoteListeners) fn(g);
 }
@@ -121,7 +136,11 @@ function createPeerLink(slot: Slot, peerId: string): PeerLink {
   const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
   const link: PeerLink = { peerId, pc, open: false, pendingIce: [] };
   pc.onicecandidate = (ev) => {
-    if (ev.candidate) publish(slot, { kind: "ice", from: slot.myId, to: peerId, candidate: ev.candidate.toJSON() });
+    if (!ev.candidate) return;
+    const init = ev.candidate.toJSON();
+    // Drop host-typ candidates so LAN IPs are never broadcast over the public broker.
+    if (isHostCandidate(init)) return;
+    publish(slot, { kind: "ice", from: slot.myId, to: peerId, candidate: init });
   };
   pc.onconnectionstatechange = () => {
     const st = pc.connectionState;
@@ -179,11 +198,13 @@ function startMqtt(slot: Slot) {
     client = mqtt.connect(BROKER_URL, {
       clean: true,
       reconnectPeriod: 4000,
-      connectTimeout: 8000,
+      connectTimeout: 10000,
       keepalive: 30,
-      clientId: `st-${slot.myId}`,
+      protocolVersion: 4,
+      clientId: `st-${slot.myId}-${Math.floor(Math.random() * 1e6)}`,
     });
-  } catch {
+  } catch (e) {
+    dlog("mqtt connect threw", e);
     setStatus(slot, "offline");
     return;
   }
@@ -192,31 +213,29 @@ function startMqtt(slot: Slot) {
 
   client.on("connect", () => {
     if (slot.destroyed) return;
+    slot.reconnectAttempts = 0;
     setStatus(slot, "signaling");
-    client.subscribe(slot.topic, { qos: 0 }, () => {
-      // Announce presence; existing peers (with smaller id) will initiate offers to us.
+    client.subscribe(slot.topic, { qos: 0 }, (err) => {
+      if (err) { dlog("subscribe err", err); return; }
       publish(slot, { kind: "hello", from: slot.myId });
-      // Re-hello periodically so late joiners discover us
       if (slot.helloTimer) window.clearInterval(slot.helloTimer);
       slot.helloTimer = window.setInterval(() => publish(slot, { kind: "hello", from: slot.myId }), 25000);
     });
     emitPeers(slot);
   });
-  client.on("reconnect", () => setStatus(slot, "connecting"));
+  client.on("reconnect", () => { slot.reconnectAttempts++; setStatus(slot, "connecting"); });
   client.on("close", () => emitPeers(slot));
   client.on("offline", () => setStatus(slot, "offline"));
-  client.on("error", () => setStatus(slot, "offline"));
+  client.on("error", (e) => { dlog("mqtt err", e?.message); setStatus(slot, "offline"); });
   client.on("message", async (_t, msg) => {
     const env = decrypt(slot.secret, msg.toString()) as Envelope | null;
     if (!env || !env.from || env.from === slot.myId) return;
     if (env.to && env.to !== slot.myId) return;
     try {
       if (env.kind === "hello") {
-        // Deterministic role: smaller id initiates offer
         if (slot.myId < env.from && !slot.links.has(env.from)) {
           await initiateOffer(slot, env.from);
         } else if (!slot.links.has(env.from)) {
-          // wait for their offer; reply with hello so they see us
           publish(slot, { kind: "hello", from: slot.myId });
         }
       } else if (env.kind === "offer" && env.sdp) {
@@ -227,9 +246,11 @@ function startMqtt(slot: Slot) {
         await handleIce(slot, env.from, env.candidate);
       } else if (env.kind === "bye") {
         const link = slot.links.get(env.from);
-        if (link) { try { link.pc.close(); } catch {}; slot.links.delete(env.from); emitPeers(slot); }
+        if (link) { try { link.pc.close(); } catch { /* */ } slot.links.delete(env.from); emitPeers(slot); }
+      } else if (env.kind === "kick" && env.memberId) {
+        for (const fn of kickListeners) fn(slot.groupId, env.memberId);
       }
-    } catch {}
+    } catch (e) { dlog("msg handler err", e); }
   });
 }
 
@@ -249,7 +270,7 @@ export function connectGroup(
   const slot: Slot = {
     groupId: id,
     topic: topicFor(id),
-    secret: id.toUpperCase(),
+    secret: deriveSignalKey(id),
     myId,
     client: null,
     links: new Map(),
@@ -270,9 +291,9 @@ export function disconnectGroup(id: string): void {
   if (s.helloTimer) window.clearInterval(s.helloTimer);
   if (s.reconnectTimer) window.clearTimeout(s.reconnectTimer);
   publish(s, { kind: "bye", from: s.myId });
-  for (const link of s.links.values()) { try { link.dc?.close(); link.pc.close(); } catch {} }
+  for (const link of s.links.values()) { try { link.dc?.close(); link.pc.close(); } catch { /* */ } }
   s.links.clear();
-  try { s.client?.end(true); } catch {}
+  try { s.client?.end(true); } catch { /* */ }
   s.client = null;
   slots.delete(id);
 }
@@ -283,17 +304,27 @@ export function broadcastGroup(g: Group): void {
   s.lastSnapshot = g;
   const payload = JSON.stringify({ type: "snapshot", group: JSON.parse(JSON.stringify(g)) });
   for (const link of s.links.values()) {
-    if (link.open && link.dc) try { link.dc.send(payload); } catch {}
+    if (link.open && link.dc) try { link.dc.send(payload); } catch { /* */ }
   }
+}
+
+export function broadcastKick(groupId: string, memberId: string): void {
+  const s = slots.get(groupId);
+  if (!s) return;
+  publish(s, { kind: "kick", from: s.myId, memberId });
 }
 
 export function onRemoteGroup(fn: (g: Group) => void): () => void {
   remoteListeners.add(fn);
-  return () => remoteListeners.delete(fn);
+  return () => { remoteListeners.delete(fn); };
 }
 export function onSyncStatus(fn: (id: string, s: SyncStatus) => void): () => void {
   statusListeners.add(fn);
-  return () => statusListeners.delete(fn);
+  return () => { statusListeners.delete(fn); };
+}
+export function onKick(fn: (groupId: string, memberId: string) => void): () => void {
+  kickListeners.add(fn);
+  return () => { kickListeners.delete(fn); };
 }
 export function peerCount(id: string): number {
   const s = slots.get(id);
@@ -305,8 +336,11 @@ export function getMyPeerId(id: string): string | undefined {
 export function retryConnect(id: string): void {
   const s = slots.get(id);
   if (!s) return;
-  if (s.client) { try { s.client.reconnect(); } catch {} }
+  if (s.client) { try { s.client.reconnect(); } catch { /* */ } }
   else startMqtt(s);
+}
+export function getSyncStatus(id: string): SyncStatus | undefined {
+  return slots.get(id)?.status;
 }
 
 /* ------------- Manual QR handshake fallback (offline) ------------- */
