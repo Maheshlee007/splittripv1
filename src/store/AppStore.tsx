@@ -484,6 +484,66 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
     [profile.id, updateGroup]
   );
 
+  /** Member claims they paid the owner. Creates a pending settlement awaiting owner verification. */
+  const claimPayment = useCallback(
+    (groupId: string, opts: { fromId: string; toId: string; amount: number; currency: string; note?: string }) => {
+      const st: Settlement = {
+        id: nanoid(),
+        fromId: opts.fromId,
+        toId: opts.toId,
+        amount: 0, // not counted until approved
+        claimedAmount: opts.amount,
+        currency: opts.currency,
+        note: opts.note,
+        createdAt: Date.now(),
+        createdBy: profile.id,
+        status: "pending",
+      };
+      updateGroup(groupId, (g) => withActivity(
+        { ...g, settlements: [st, ...g.settlements] },
+        activity(profile, "settlement", `claimed paid ${opts.amount} (awaiting verification)`)
+      ));
+    },
+    [profile, updateGroup]
+  );
+
+  const reviewClaim = useCallback(
+    (groupId: string, claimId: string, decision: { approve: boolean; amount?: number; note?: string }) => {
+      updateGroup(groupId, (g) => {
+        const next = g.settlements.map((s) => {
+          if (s.id !== claimId || s.status === undefined) return s;
+          if (!decision.approve) {
+            return { ...s, status: "rejected" as const, reviewedBy: profile.id, reviewedAt: Date.now(), note: decision.note ?? s.note };
+          }
+          const claim = s.claimedAmount ?? 0;
+          const approved = decision.amount ?? claim;
+          return {
+            ...s,
+            amount: approved,
+            approvedAmount: approved,
+            status: (approved < claim ? "partial" : "approved") as "partial" | "approved",
+            reviewedBy: profile.id,
+            reviewedAt: Date.now(),
+            note: decision.note ?? s.note,
+          };
+        });
+        return withActivity({ ...g, settlements: next }, activity(profile, "settlement", decision.approve ? "verified a payment" : "rejected a payment claim"));
+      });
+    },
+    [profile, updateGroup]
+  );
+
+  /** Owner/admin approves a member's leave request: kicks via P2P then removes locally. */
+  const approveLeave = useCallback(
+    (groupId: string, memberId: string) => {
+      try { broadcastKick(groupId, memberId); } catch { /* */ }
+      removeMember(groupId, memberId);
+    },
+    [removeMember]
+  );
+
+
+
   const myMemberId = useCallback(
     (groupId: string) => {
       const g = groupsRef.current.find((x) => x.id === groupId);
