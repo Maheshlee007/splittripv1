@@ -28,12 +28,6 @@ export function MembersList({ group }: { group: Group }) {
     toast.success("Member added");
   };
 
-  const cycleRole = (m: Member) => {
-    if (!isOwner || m.id === group.ownerId) return;
-    const next: Member["role"] = m.role === "member" ? "admin" : "member";
-    setRole(group.id, m.id, next);
-    toast.success(`${m.name} is now ${next}`);
-  };
 
   const pending = group.members.filter((m) => m.status === "pending");
   const active = group.members.filter((m) => m.status !== "pending");
