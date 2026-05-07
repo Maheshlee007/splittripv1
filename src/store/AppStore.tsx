@@ -624,7 +624,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       groups, getGroup, createGroup, joinGroup, removeGroup, setArchived, updateGroup, importGroup,
       addMember, updateMember, removeMember, setRole, approveMember, rejectMember, requestLeave, clearLeaveRequest,
       addExpense, updateExpense, removeExpense,
-      submitRequest, approveRequest, rejectRequest, addSettlement, peers, myMemberId, myRole,
+      submitRequest, approveRequest, rejectRequest, addSettlement, claimPayment, reviewClaim, approveLeave, regenerateInviteToken, peers, myMemberId, myRole,
     ]
   );
 
