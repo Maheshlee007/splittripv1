@@ -10,8 +10,10 @@ import { z } from "zod";
 // ~2 MB upper bound on a base64 data URL (incl. header).
 const MAX_BILL_IMAGE = 2_700_000;
 
-const safeStr = (max: number) =>
-  z.string().max(max).transform((s) => s.replace(/[\u0000-\u0008\u000B-\u001F\u007F]/g, ""));
+const safeStr = (max: number, min = 0) => {
+  const base = min > 0 ? z.string().min(min).max(max) : z.string().max(max);
+  return base.transform((s) => s.replace(/[\u0000-\u0008\u000B-\u001F\u007F]/g, ""));
+};
 
 const RoleSchema = z.enum(["owner", "admin", "member"]);
 const StatusSchema = z.enum(["active", "pending"]).optional();
