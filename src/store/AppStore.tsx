@@ -359,8 +359,13 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
   );
 
   const setArchived = useCallback((id: string, archived: boolean) => {
+    if (archived) disconnectGroup(id);
     updateGroup(id, (g) => withActivity({ ...g, archived, archivedAt: archived ? Date.now() : undefined }, activity(profile, "archive", archived ? "archived the trip" : "restored the trip")));
   }, [profile, updateGroup]);
+
+  const regenerateInviteToken = useCallback((groupId: string) => {
+    updateGroup(groupId, (g) => ({ ...g, inviteToken: nanoid(22) }));
+  }, [updateGroup]);
 
   const setRole = useCallback(
     (groupId: string, memberId: string, role: Member["role"]) => {
