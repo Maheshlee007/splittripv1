@@ -649,7 +649,7 @@ function mergeGroups(a: Group, b: Group): Group {
     budget: b.budget ?? a.budget,
     ownerId: a.ownerId || b.ownerId,
     inviteToken: a.inviteToken || b.inviteToken,
-    archived: a.ownerId === a.ownerId ? (a.archived ?? b.archived) : a.archived,
+    archived: a.archived ?? b.archived,
     archivedAt: a.archivedAt ?? b.archivedAt,
     members: mergeBy(a.members, b.members, (m) => m.id, (x, y) => ({
       ...y,
