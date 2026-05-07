@@ -222,6 +222,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
         currency,
         createdAt: Date.now(),
         ownerId: profile.id,
+        inviteToken: nanoid(22),
         members: [{
           id: profile.id,
           name: profile.name || "Me",
