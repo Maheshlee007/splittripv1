@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { getFirestore } from "firebase/firestore";
+import { connectFirestoreEmulator, getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: "AIzaSyCtNwkWQxiat8usjKyNLxRFAUJ2kuZ_8vs",
@@ -12,3 +12,17 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
+
+const useFirestoreEmulator =
+  import.meta.env.DEV &&
+  (import.meta.env.VITE_USE_FIREBASE_EMULATOR ?? "true") !== "false";
+
+if (useFirestoreEmulator) {
+  const host = import.meta.env.VITE_FIRESTORE_EMULATOR_HOST ?? "127.0.0.1";
+  const port = Number(import.meta.env.VITE_FIRESTORE_EMULATOR_PORT ?? "8080");
+  try {
+    connectFirestoreEmulator(db, host, port);
+  } catch {
+    // Ignore repeated emulator binding during hot reload.
+  }
+}

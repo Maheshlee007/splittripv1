@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { db } from "@/lib/firebase";
-import { doc, setDoc, onSnapshot, collection, deleteDoc, updateDoc, arrayUnion, deleteField } from "firebase/firestore";
+import { doc, setDoc, onSnapshot, deleteDoc, updateDoc, deleteField, getDoc } from "firebase/firestore";
 import CryptoJS from "crypto-js";
 import { Group } from "@/lib/types";
 import { safeParseGroup } from "@/lib/schema";
@@ -44,6 +44,26 @@ export function useWebRTCSync(
 
   const pcsRef = useRef<Map<string, RTCPeerConnection>>(new Map());
   const dcsRef = useRef<Map<string, RTCDataChannel>>(new Map());
+  const onRemoteGroupRef = useRef(onRemoteGroup);
+  const onKickRef = useRef(onKick);
+  const onTripEndedRef = useRef(onTripEnded);
+  const onConnectRef = useRef(onConnect);
+
+  useEffect(() => {
+    onRemoteGroupRef.current = onRemoteGroup;
+  }, [onRemoteGroup]);
+
+  useEffect(() => {
+    onKickRef.current = onKick;
+  }, [onKick]);
+
+  useEffect(() => {
+    onTripEndedRef.current = onTripEnded;
+  }, [onTripEnded]);
+
+  useEffect(() => {
+    onConnectRef.current = onConnect;
+  }, [onConnect]);
 
   const disconnectAll = useCallback(() => {
     dcsRef.current.forEach(dc => dc.close());
@@ -106,16 +126,16 @@ export function useWebRTCSync(
       const data = JSON.parse(ev.data);
       if (data?.type === "snapshot" && data.group) {
         const parsed = safeParseGroup(data.group);
-        if (parsed.success) onRemoteGroup(parsed.data as Group);
+        if (parsed.success) onRemoteGroupRef.current(parsed.data as Group);
       } else if (data?.type === "kick" && data.memberId && data.kickerId) {
-        if (tripId) onKick(tripId, data.memberId, data.kickerId);
+        if (tripId) onKickRef.current(tripId, data.memberId, data.kickerId);
       } else if (data?.type === "trip_ended") {
-        if (tripId) onTripEnded(tripId);
+        if (tripId) onTripEndedRef.current(tripId);
       } else if (data?.type === "presence" && Array.isArray(data.members)) {
         setOnlineMembers(data.members);
       }
     } catch {}
-  }, [onRemoteGroup, onKick, onTripEnded, tripId]);
+  }, [tripId]);
 
 
   // ---------------------------------------------------------
@@ -127,8 +147,21 @@ export function useWebRTCSync(
     setStatus("signaling");
     const tripRef = doc(db, "trips", tripId);
 
-    const expireAt = Date.now() + 14 * 24 * 60 * 60 * 1000;
-    setDoc(tripRef, { expireAt, ownerId: memberId }, { merge: true }).catch(console.error);
+    getDoc(tripRef).then((snap) => {
+      const existing = snap.data();
+      const currentExpire = Number(existing?.expireAt ?? 0);
+      const minRequiredExpire = Date.now() + 24 * 60 * 60 * 1000;
+      const patch: Record<string, unknown> = {};
+
+      if (!existing?.ownerId) patch.ownerId = memberId;
+      if (!currentExpire || currentExpire < minRequiredExpire) {
+        patch.expireAt = Date.now() + 14 * 24 * 60 * 60 * 1000;
+      }
+
+      if (Object.keys(patch).length > 0) {
+        setDoc(tripRef, patch, { merge: true }).catch(console.error);
+      }
+    }).catch(console.error);
 
     const unsubscribe = onSnapshot(tripRef, (snapshot) => {
       if (!snapshot.exists()) return;
@@ -169,7 +202,7 @@ export function useWebRTCSync(
               dcsRef.current.set(peerId, dc);
               dc.onopen = () => {
                 updateHostPresence();
-                onConnect();
+                onConnectRef.current();
               };
               dc.onclose = updateHostPresence;
               dc.onmessage = handleDataChannelMessage;
@@ -221,7 +254,7 @@ export function useWebRTCSync(
       unsubscribe();
       disconnectAll();
     };
-  }, [tripId, code, memberId, isHost, syncDisabled, disconnectAll, handleDataChannelMessage, updateHostPresence, onConnect]);
+  }, [tripId, code, memberId, isHost, syncDisabled, disconnectAll, handleDataChannelMessage, updateHostPresence]);
 
 
   // ---------------------------------------------------------
@@ -253,7 +286,7 @@ export function useWebRTCSync(
       
       dc.onopen = () => {
         setStatus("connected");
-        onConnect();
+        onConnectRef.current();
       };
       dc.onclose = () => {
         setStatus("signaling");
@@ -315,6 +348,10 @@ export function useWebRTCSync(
         if (hostSdp && hostSdp.type === "answer") {
           try {
             await pc.setRemoteDescription(hostSdp);
+            await updateDoc(tripRef, {
+              [`members.${memberId}.hostSdp`]: deleteField(),
+              [`members.${memberId}.memberSdp`]: deleteField(),
+            });
           } catch (e) {
              console.error("Member failed to set remote answer:", e);
           }
@@ -328,7 +365,7 @@ export function useWebRTCSync(
       if (dc) dc.close();
       disconnectAll();
     };
-  }, [tripId, code, memberId, isHost, syncDisabled, disconnectAll, handleDataChannelMessage, onConnect]);
+  }, [tripId, code, memberId, isHost, syncDisabled, disconnectAll, handleDataChannelMessage]);
 
   const disconnectAndLeave = useCallback(async () => {
     disconnectAll();
