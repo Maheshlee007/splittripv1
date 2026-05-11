@@ -2,7 +2,6 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { customAlphabet, nanoid } from "nanoid";
 import { ActivityItem, Expense, ExpenseRequest, Group, Member, Profile, Settlement, Split, SplitMode } from "@/lib/types";
 import { loadGroups, loadProfile, loadTheme, saveGroup, saveProfile, saveTheme, deleteGroup, ThemePref } from "@/lib/storage";
-import { connectGroup, disconnectGroup, broadcastGroup, broadcastKick, onRemoteGroup, onKick } from "@/lib/sync";
 
 const codeAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const newCode = customAlphabet(codeAlphabet, 6);
@@ -18,10 +17,11 @@ interface AppStoreValue {
   toggleTheme: () => void;
   groups: Group[];
   getGroup: (id: string) => Group | undefined;
-  createGroup: (name: string, emoji: string, currency: string) => Group;
-  joinGroup: (code: string) => Group;
+  createGroup: (name: string, emoji: string, currency: string, syncDisabled?: boolean) => Group;
+  joinGroup: (code: string, inviteToken?: string) => Group;
   removeGroup: (id: string) => void;
   setArchived: (id: string, archived: boolean) => void;
+  setSyncEnabled: (id: string, enabled: boolean) => void;
   updateGroup: (id: string, fn: (g: Group) => Group) => void;
   importGroup: (g: Group) => void;
   /* member ops */
@@ -48,9 +48,15 @@ interface AppStoreValue {
   approveLeave: (groupId: string, memberId: string) => void;
   regenerateInviteToken: (groupId: string) => void;
   /* sync */
-  peers: Record<string, number>;
+  peers: Record<string, string[]>;
   myMemberId: (groupId: string) => string | undefined;
   myRole: (groupId: string) => Member["role"] | undefined;
+  setBroadcaster: (fn: ((g: Group) => void) | null) => void;
+  setKickCaster: (fn: ((target: string, kicker: string) => void) | null) => void;
+  handleRemoteGroup: (incoming: Group) => void;
+  handleRemoteKick: (groupId: string, memberId: string, kickerId: string) => void;
+  handleTripEnded: (groupId: string) => void;
+  setTripPeers: (groupId: string, activeMembers: string[]) => void;
 }
 
 const Ctx = createContext<AppStoreValue | null>(null);
@@ -99,7 +105,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
   const [themePref, setThemePrefState] = useState<ThemePref>("system");
   const [systemTheme, setSystemTheme] = useState<"light" | "dark">(getSystemTheme);
   const [groups, setGroups] = useState<Group[]>([]);
-  const [peers, setPeers] = useState<Record<string, number>>({});
+  const [peers, setPeers] = useState<Record<string, string[]>>({});
   const groupsRef = useRef<Group[]>([]);
   groupsRef.current = groups;
 
@@ -132,59 +138,62 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
     document.documentElement.classList.toggle("dark", resolvedTheme === "dark");
   }, [resolvedTheme]);
 
-  // sync wiring per group (skip archived — they unsubscribe from the broker)
-  useEffect(() => {
-    if (!ready) return;
-    const liveIds = groups.filter((g) => !g.archived).map((g) => g.id);
-    for (const g of groups) {
-      if (g.archived) { disconnectGroup(g.id); continue; }
-      connectGroup(g.id, {
-        onPeers: (n) => setPeers((p) => ({ ...p, [g.id]: n })),
-      });
-      window.setTimeout(() => broadcastGroup(g), 400);
-    }
-    return () => {
-      for (const id of liveIds) disconnectGroup(id);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, groups.map((g) => `${g.id}:${g.archived ? 1 : 0}`).join(",")]);
+  const broadcasterRef = useRef<((g: Group) => void) | null>(null);
+  const kickCasterRef = useRef<((target: string, kicker: string) => void) | null>(null);
 
-  // listen for remote updates
-  useEffect(() => {
-    const off = onRemoteGroup((incoming) => {
-      setGroups((curr) => {
-        const idx = curr.findIndex((g) => g.id === incoming.id);
-        if (idx === -1) {
-          const merged = ensureMe(sanitizeIncomingForProfile(incoming, undefined, profile), profile);
-          saveGroup(merged);
-          return [...curr, merged];
-        }
-        const merged = ensureMe(mergeGroups(curr[idx], sanitizeIncomingForProfile(incoming, curr[idx], profile)), profile);
+  const setBroadcaster = useCallback((fn: ((g: Group) => void) | null) => { broadcasterRef.current = fn; }, []);
+  const setKickCaster = useCallback((fn: ((t: string, k: string) => void) | null) => { kickCasterRef.current = fn; }, []);
+
+  const handleRemoteGroup = useCallback((incoming: Group) => {
+    setGroups((curr) => {
+      const idx = curr.findIndex((g) => g.id === incoming.id);
+      if (idx === -1) {
+        const merged = ensureMe(sanitizeIncomingForProfile(incoming, undefined, profile), profile);
         saveGroup(merged);
-        const next = [...curr];
-        next[idx] = merged;
-        return next;
-      });
+        return [...curr, merged];
+      }
+      const merged = ensureMe(mergeGroups(curr[idx], sanitizeIncomingForProfile(incoming, curr[idx], profile)), profile);
+      saveGroup(merged);
+      const next = [...curr];
+      next[idx] = merged;
+      return next;
     });
-    return off;
   }, [profile]);
 
-  // Owner kicks a member -> remove ourselves locally and disconnect.
-  useEffect(() => {
-    const off = onKick((groupId, memberId) => {
-      if (memberId !== profile.id) return;
-      disconnectGroup(groupId);
-      deleteGroup(groupId);
-      setGroups((curr) => curr.filter((g) => g.id !== groupId));
-    });
-    return off;
+  const handleRemoteKick = useCallback((groupId: string, memberId: string, kickerId: string) => {
+    if (memberId !== profile.id) return;
+    const g = groupsRef.current.find((x) => x.id === groupId);
+    if (g) {
+      const kicker = g.members.find((m) => m.id === kickerId);
+      if (!kicker || (kicker.role !== "owner" && kicker.role !== "admin")) {
+        console.warn("Unauthorized kick attempt blocked.");
+        return;
+      }
+    }
+    deleteGroup(groupId);
+    setGroups((curr) => curr.filter((g) => g.id !== groupId));
   }, [profile.id]);
-
 
   const persist = useCallback((g: Group, broadcast = true) => {
     saveGroup(g);
-    if (broadcast) broadcastGroup(g);
+    if (broadcast && broadcasterRef.current) broadcasterRef.current(g);
   }, []);
+
+  const handleTripEnded = useCallback((groupId: string) => {
+    setGroups((curr) => {
+      const next = curr.map((g) => (g.id === groupId ? { ...g, archived: true, archivedAt: Date.now() } : g));
+      const tg = next.find((g) => g.id === groupId);
+      if (tg) persist(tg);
+      return next;
+    });
+  }, [persist]);
+
+  const setTripPeers = useCallback((groupId: string, activeMembers: string[]) => {
+    setPeers((p) => ({ ...p, [groupId]: activeMembers }));
+  }, []);
+
+
+
 
   const setProfileFields = useCallback(
     (patch: Partial<Profile>) => {
@@ -229,7 +238,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
   const getGroup = useCallback((id: string) => groupsRef.current.find((g) => g.id === id), []);
 
   const createGroup = useCallback(
-    (name: string, emoji: string, currency: string): Group => {
+    (name: string, emoji: string, currency: string, syncDisabled: boolean = false): Group => {
       const id = newCode();
       const g: Group = {
         id,
@@ -250,6 +259,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
         expenses: [],
         requests: [],
         settlements: [],
+        syncDisabled,
         activity: [activity(profile, "member", "created the trip")],
       };
       setGroups((curr) => [...curr, g]);
@@ -260,10 +270,15 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
   );
 
   const joinGroup = useCallback(
-    (code: string): Group => {
+    (code: string, inviteToken?: string): Group => {
       const id = code.toUpperCase().trim();
       const existing = groupsRef.current.find((g) => g.id === id);
-      if (existing) return existing;
+      if (existing) {
+        if (inviteToken && existing.inviteToken !== inviteToken) {
+           updateGroup(id, (g) => ({ ...g, inviteToken }));
+        }
+        return existing;
+      }
       const g: Group = {
         id,
         name: `Trip ${id}`,
@@ -271,6 +286,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
         currency: "INR",
         createdAt: Date.now(),
         ownerId: "",
+        inviteToken,
         members: [{
           id: profile.id,
           name: profile.name || "Me",
@@ -296,7 +312,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       const i = curr.findIndex((x) => x.id === g.id);
       const merged = ensureMe(g, profile);
       saveGroup(merged);
-      broadcastGroup(merged);
+      if (broadcasterRef.current) broadcasterRef.current(merged);
       if (i === -1) return [...curr, merged];
       const next = [...curr];
       next[i] = merged;
@@ -305,10 +321,22 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
   }, [profile]);
 
   const removeGroup = useCallback((id: string) => {
-    disconnectGroup(id);
     deleteGroup(id);
     setGroups((curr) => curr.filter((g) => g.id !== id));
   }, []);
+
+
+
+  const setSyncEnabled = useCallback(
+    (id: string, enabled: boolean) =>
+      setGroups((curr) => {
+        const next = curr.map((g) => (g.id === id ? { ...g, syncDisabled: !enabled } : g));
+        const tg = next.find((g) => g.id === id);
+        if (tg) persist(tg);
+        return next;
+      }),
+    [persist]
+  );
 
   const updateGroup = useCallback(
     (id: string, fn: (g: Group) => Group) => {
@@ -375,7 +403,6 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
   );
 
   const setArchived = useCallback((id: string, archived: boolean) => {
-    if (archived) disconnectGroup(id);
     updateGroup(id, (g) => withActivity({ ...g, archived, archivedAt: archived ? Date.now() : undefined }, activity(profile, "archive", archived ? "archived the trip" : "restored the trip")));
   }, [profile, updateGroup]);
 
@@ -552,10 +579,12 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
   /** Owner/admin approves a member's leave request: kicks via P2P then removes locally. */
   const approveLeave = useCallback(
     (groupId: string, memberId: string) => {
-      try { broadcastKick(groupId, memberId); } catch { /* */ }
+      if (kickCasterRef.current) {
+        try { kickCasterRef.current(memberId, profile.id); } catch { /* */ }
+      }
       removeMember(groupId, memberId);
     },
-    [removeMember]
+    [removeMember, profile.id]
   );
 
 
@@ -594,6 +623,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       joinGroup,
       removeGroup,
       setArchived,
+      setSyncEnabled,
       updateGroup,
       importGroup,
       addMember,
@@ -618,6 +648,12 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       peers,
       myMemberId,
       myRole,
+      setBroadcaster,
+      setKickCaster,
+      handleRemoteGroup,
+      handleRemoteKick,
+      handleTripEnded,
+      setTripPeers,
     }),
     [
       ready, profile, setProfileFields, hasProfile, themePref, resolvedTheme, setThemePref, toggleTheme,
@@ -625,6 +661,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       addMember, updateMember, removeMember, setRole, approveMember, rejectMember, requestLeave, clearLeaveRequest,
       addExpense, updateExpense, removeExpense,
       submitRequest, approveRequest, rejectRequest, addSettlement, claimPayment, reviewClaim, approveLeave, regenerateInviteToken, peers, myMemberId, myRole,
+      setBroadcaster, setKickCaster, handleRemoteGroup, handleRemoteKick, setTripPeers,
     ]
   );
 

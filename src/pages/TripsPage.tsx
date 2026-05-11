@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Plus, Users, LogIn, Wifi, WifiOff, Upload } from "lucide-react";
+import { Plus, Users, LogIn, Wifi, WifiOff, Upload, MoreVertical, Archive, ArchiveRestore, Trash2, Share2 } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { useConfirm } from "@/components/ConfirmDialog";
+import { ShareCodeDialog } from "@/components/ShareCodeDialog";
 import { useApp } from "@/store/AppStore";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
@@ -13,6 +16,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { fmtMoney, relativeTime } from "@/lib/format";
 import { totalSpent } from "@/lib/balances";
 import { ProfileSetupDialog } from "@/components/ProfileSetupDialog";
+import { QRScannerDialog } from "@/components/QRScannerDialog";
 import { importJSON } from "@/lib/exports";
 import { toast } from "sonner";
 
@@ -24,27 +28,33 @@ export default function TripsPage() {
   const nav = useNavigate();
   const [params, setParams] = useSearchParams();
   const [open, setOpen] = useState(false);
+  const [scanOpen, setScanOpen] = useState(false);
   const [tab, setTab] = useState<"create" | "join">("create");
   const [name, setName] = useState("");
   const [emoji, setEmoji] = useState("🧳");
   const [currency, setCurrency] = useState("INR");
   const [code, setCode] = useState("");
-  const [profileGate, setProfileGate] = useState<null | "create" | { join: string }>(null);
+  const [secretKey, setSecretKey] = useState("");
+  const [syncDisabled, setSyncDisabled] = useState(false);
+  const [profileGate, setProfileGate] = useState<null | "create" | { join: string; secret?: string }>(null);
+  const [shareGroup, setShareGroup] = useState<any>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const handledJoinRef = useRef(false);
+  const confirm = useConfirm();
 
   // Auto-join via ?join=CODE  or  ?trip=CODE&code=SECRET[&sdp=...]
   useEffect(() => {
     const j = (params.get("join") || params.get("trip") || "").toUpperCase().trim();
+    const secret = params.get("code") || undefined;
     const sdp = params.get("sdp");
     if (!j || handledJoinRef.current) return;
     handledJoinRef.current = true;
     if (j.length !== 6) { setParams({}, { replace: true }); return; }
     if (!hasProfile) {
-      setProfileGate({ join: j });
+      setProfileGate({ join: j, secret });
       return;
     }
-    const g = joinGroup(j);
+    const g = joinGroup(j, secret);
     setParams({}, { replace: true });
     if (sdp) {
       // Offline QR fallback: stash for the trip page to consume
@@ -66,18 +76,41 @@ export default function TripsPage() {
 
   const handleCreate = () => {
     if (!name.trim()) return;
-    const g = createGroup(name.trim(), emoji, currency);
+    const g = createGroup(name.trim(), emoji, currency, syncDisabled);
     setOpen(false);
     setName("");
     nav(`/trip/${g.id}`);
   };
   const handleJoin = () => {
-    if (code.trim().length !== 6) return;
-    const g = joinGroup(code);
+    if (code.trim().length !== 6 || secretKey.trim().length === 0) return;
+    const g = joinGroup(code, secretKey.trim());
     setOpen(false);
     setCode("");
+    setSecretKey("");
     toast.success("Joining — owner will approve you");
     nav(`/trip/${g.id}`);
+  };
+
+  const handleScan = (url: string) => {
+    try {
+      const parsed = new URL(url);
+      const j = (parsed.searchParams.get("trip") || parsed.searchParams.get("join") || "").toUpperCase().trim();
+      const secret = parsed.searchParams.get("code") || undefined;
+      
+      if (j && j.length === 6) {
+        if (!hasProfile) {
+          setProfileGate({ join: j, secret });
+          return;
+        }
+        const g = joinGroup(j, secret);
+        toast.success(`Joined ${g.name}`);
+        nav(`/trip/${g.id}`);
+      } else {
+        toast.error("Invalid QR code");
+      }
+    } catch {
+      toast.error("Invalid QR code format");
+    }
   };
 
   const handleImport = async (file?: File) => {
@@ -165,6 +198,29 @@ export default function TripsPage() {
                   ))}
                 </div>
               </div>
+              <div>
+                <Label>Visibility</Label>
+                <div className="mt-1 flex gap-2">
+                  <button
+                    onClick={() => setSyncDisabled(false)}
+                    className={`flex-1 rounded-lg border px-3 py-2 text-xs font-medium transition ${
+                      !syncDisabled ? "border-primary bg-primary/10 text-primary" : "border-border bg-secondary text-secondary-foreground"
+                    }`}
+                  >
+                    <div className="flex items-center justify-center gap-1.5"><Users className="h-4 w-4" /> Shared</div>
+                    <div className="mt-0.5 text-[10px] font-normal opacity-80">With team & peers</div>
+                  </button>
+                  <button
+                    onClick={() => setSyncDisabled(true)}
+                    className={`flex-1 rounded-lg border px-3 py-2 text-xs font-medium transition ${
+                      syncDisabled ? "border-primary bg-primary/10 text-primary" : "border-border bg-secondary text-secondary-foreground"
+                    }`}
+                  >
+                    <div className="flex items-center justify-center gap-1.5"><WifiOff className="h-4 w-4" /> Self Only</div>
+                    <div className="mt-0.5 text-[10px] font-normal opacity-80">Local expense tracker</div>
+                  </button>
+                </div>
+              </div>
               <Button className="w-full" onClick={handleCreate} disabled={!name.trim()}>
                 Create trip
               </Button>
@@ -185,13 +241,30 @@ export default function TripsPage() {
                   Ask the trip owner for the 6-character code or invite link. The owner approves you before you can edit.
                 </p>
               </div>
-              <Button className="w-full" onClick={handleJoin} disabled={code.length !== 6}>
-                Join trip
-              </Button>
+              <div>
+                <Label>Secret Key</Label>
+                <Input
+                  placeholder="Paste the secret link code..."
+                  value={secretKey}
+                  onChange={(e) => setSecretKey(e.target.value)}
+                  className="font-mono"
+                  onKeyDown={(e) => e.key === "Enter" && handleJoin()}
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button className="flex-1" onClick={handleJoin} disabled={code.length !== 6 || secretKey.length === 0}>
+                  Join trip
+                </Button>
+                <Button variant="secondary" onClick={() => setScanOpen(true)}>
+                  Scan QR
+                </Button>
+              </div>
             </TabsContent>
           </Tabs>
         </DialogContent>
       </Dialog>
+      
+      <QRScannerDialog open={scanOpen} onOpenChange={setScanOpen} onScan={handleScan} />
 
       <ProfileSetupDialog
         open={!!profileGate}
@@ -202,7 +275,7 @@ export default function TripsPage() {
           if (gate === "create") { setTab("create"); setOpen(true); }
           else if (gate && typeof gate === "object" && "join" in gate) {
             if (gate.join) {
-              const g = joinGroup(gate.join);
+              const g = joinGroup(gate.join, gate.secret);
               setParams({}, { replace: true });
               nav(`/trip/${g.id}`);
             } else {
@@ -212,7 +285,7 @@ export default function TripsPage() {
         }}
       />
 
-      <div className="mx-auto max-w-3xl px-4 py-4">
+      <div className="mx-auto w-full max-w-screen-xl px-4 py-4">
         <BackupReminderBanner show={hasProfile} />
         {groups.length === 0 ? (
           <EmptyState
@@ -231,31 +304,74 @@ export default function TripsPage() {
             }
           />
         ) : (
-          <TripGrids groups={groups} peers={peers} nav={nav} />
+          <TripGrids groups={groups} peers={peers} nav={nav} setShareGroup={setShareGroup} />
         )}
       </div>
+
+      {shareGroup && (
+        <ShareCodeDialog
+          open={!!shareGroup}
+          onOpenChange={(v) => !v && setShareGroup(null)}
+          groupId={shareGroup.id}
+          inviteToken={shareGroup.inviteToken}
+          groupName={shareGroup.name}
+        />
+      )}
     </>
   );
 }
 
-function TripGrids({ groups, peers, nav }: { groups: any[]; peers: Record<string, number>; nav: (p: string) => void }) {
+function TripGrids({ groups, peers, nav, setShareGroup }: { groups: any[]; peers: Record<string, string[]>; nav: (p: string) => void; setShareGroup: (g: any) => void }) {
   const active = groups.filter((g) => !g.archived);
   const archived = groups.filter((g) => g.archived);
+  const { setArchived, removeGroup, handleTripEnded, profile } = useApp();
+  const confirm = useConfirm();
+
+  const handleEnd = async (g: any) => {
+    const isHost = g.ownerId === profile?.id || g.members.find((m: any) => m.id === profile?.id)?.role === "owner";
+    const ok = await confirm({
+      title: g.archived ? "Restore this trip?" : "End this trip?",
+      description: g.archived ? "The trip becomes editable again." : "The trip will be marked as Read-Only.",
+      confirmText: g.archived ? "Restore" : "End Trip",
+    });
+    if (ok) {
+      setArchived(g.id, !g.archived);
+      toast.success(g.archived ? "Restored" : "Ended");
+    }
+  };
+
+  const handleDelete = async (g: any) => {
+    const ok = await confirm({
+      title: "Delete trip locally?",
+      description: "This removes the trip from this device. Cannot be undone.",
+      confirmText: "Delete",
+      destructive: true,
+    });
+    if (ok) {
+      removeGroup(g.id);
+      toast.success("Deleted");
+    }
+  };
+
   return (
     <div className="space-y-6">
       {active.length > 0 && (
         <section>
           <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Active ({active.length})</h2>
           <div className="grid gap-3 sm:grid-cols-2">
-            {active.map((g) => <TripCard key={g.id} g={g} live={(peers[g.id] ?? 0) > 0} peerCount={peers[g.id] ?? 0} onClick={() => nav(`/trip/${g.id}`)} />)}
+            {active.map((g) => (
+              <TripCard key={g.id} g={g} live={(peers[g.id]?.length ?? 0) > 1} peerCount={(peers[g.id]?.length ?? 0) > 0 ? peers[g.id].length - 1 : 0} onClick={() => nav(`/trip/${g.id}`)} onEnd={() => handleEnd(g)} onDelete={() => handleDelete(g)} onShare={() => setShareGroup(g)} />
+            ))}
           </div>
         </section>
       )}
       {archived.length > 0 && (
         <section>
-          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Archived ({archived.length})</h2>
+          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Ended (Read-only) ({archived.length})</h2>
           <div className="grid gap-3 sm:grid-cols-2 opacity-80">
-            {archived.map((g) => <TripCard key={g.id} g={g} live={false} peerCount={0} onClick={() => nav(`/trip/${g.id}`)} />)}
+            {archived.map((g) => (
+              <TripCard key={g.id} g={g} live={false} peerCount={0} onClick={() => nav(`/trip/${g.id}`)} onEnd={() => handleEnd(g)} onDelete={() => handleDelete(g)} onShare={() => setShareGroup(g)} />
+            ))}
           </div>
         </section>
       )}
@@ -263,12 +379,12 @@ function TripGrids({ groups, peers, nav }: { groups: any[]; peers: Record<string
   );
 }
 
-function TripCard({ g, live, peerCount, onClick }: { g: any; live: boolean; peerCount: number; onClick: () => void }) {
+function TripCard({ g, live, peerCount, onClick, onEnd, onDelete, onShare }: { g: any; live: boolean; peerCount: number; onClick: () => void; onEnd: () => void; onDelete: () => void; onShare: () => void; }) {
   const total = totalSpent(g);
   return (
     <Card
       onClick={onClick}
-      className="group relative cursor-pointer overflow-hidden border-border/60 p-4 shadow-card transition-all hover:-translate-y-0.5 hover:shadow-elevated"
+      className="group relative cursor-pointer overflow-visible border-border/60 p-4 shadow-card transition-all hover:-translate-y-0.5 hover:shadow-elevated"
     >
       <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-primary/0 via-primary/60 to-primary/0 opacity-0 transition-opacity group-hover:opacity-100" />
       <div className="flex items-start justify-between gap-3">
@@ -277,24 +393,47 @@ function TripCard({ g, live, peerCount, onClick }: { g: any; live: boolean; peer
           <div className="min-w-0">
             <h3 className="flex items-center gap-1.5 truncate font-semibold">
               {g.name}
-              {g.archived && <span className="rounded-md bg-secondary px-1.5 py-0.5 text-[9px] font-medium uppercase text-muted-foreground">archived</span>}
+              {g.archived && <span className="rounded-md bg-secondary px-1.5 py-0.5 text-[9px] font-medium uppercase text-muted-foreground">ended</span>}
+              {g.syncDisabled && <span className="rounded-md bg-secondary px-1.5 py-0.5 text-[9px] font-medium uppercase text-muted-foreground">self</span>}
             </h3>
             <p className="text-xs text-muted-foreground">
               {g.members.length} member{g.members.length === 1 ? "" : "s"} · {relativeTime(g.createdAt)}
             </p>
           </div>
         </div>
-        <span className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${live ? "bg-success/15 text-success" : "bg-muted text-muted-foreground"}`}>
-          {live ? <Wifi className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />}
-          {live ? `${peerCount}` : "offline"}
-        </span>
+        <div className="flex flex-col items-end gap-2" onClick={(e) => e.stopPropagation()}>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="-mr-2 -mt-2 h-8 w-8 text-muted-foreground">
+                <MoreVertical className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={onShare} disabled={g.syncDisabled}>
+                <Share2 className="mr-2 h-4 w-4" /> Share
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onEnd}>
+                {g.archived ? <ArchiveRestore className="mr-2 h-4 w-4" /> : <Archive className="mr-2 h-4 w-4" />}
+                {g.archived ? "Restore trip" : "End trip"}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onDelete} className="text-destructive focus:text-destructive">
+                <Trash2 className="mr-2 h-4 w-4" /> Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          {!g.archived && !g.syncDisabled && (
+            <span className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${live ? "bg-success/15 text-success" : "bg-muted text-muted-foreground"}`}>
+              {live ? <Wifi className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />}
+              {live ? `${peerCount}` : "offline"}
+            </span>
+          )}
+        </div>
       </div>
       <div className="mt-3 flex items-end justify-between">
         <div>
           <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Spent</p>
           <p className="text-lg font-semibold tabular-nums">{fmtMoney(total, g.currency)}</p>
         </div>
-        <code className="rounded-md bg-secondary px-2 py-1 text-[11px] font-mono tracking-wider">{g.id}</code>
       </div>
     </Card>
   );

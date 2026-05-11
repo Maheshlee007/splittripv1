@@ -5,17 +5,18 @@ import LZString from "lz-string";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { createManualOffer, acceptManualOffer } from "@/lib/sync";
+import { createOfflineOffer, acceptOfflineOffer } from "@/lib/offline-sync";
 import { Camera, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
+import { useApp } from "@/store/AppStore";
 
 type Mode = "host" | "guest";
 
-function buildUrl(groupId: string, kind: "o" | "a", sdp: string) {
+function buildUrl(groupId: string, inviteToken: string | undefined, kind: "o" | "a", sdp: string) {
   const compressed = LZString.compressToEncodedURIComponent(sdp);
   const origin = typeof window !== "undefined" ? window.location.origin : "";
   // Keeping URL short: trip + code + sdp. The trip code IS the symmetric key.
-  return `${origin}/?trip=${groupId}&code=${groupId}&kind=${kind}&sdp=${compressed}`;
+  return `${origin}/?trip=${groupId}&code=${inviteToken || ""}&kind=${kind}&sdp=${compressed}`;
 }
 function parseUrl(text: string): { kind: "o" | "a"; sdp: string } | null {
   try {
@@ -33,16 +34,21 @@ export function QRHandshakeDialog({
   open,
   onOpenChange,
   groupId,
+  inviteToken,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   groupId: string;
+  inviteToken?: string;
 }) {
   const [mode, setMode] = useState<Mode>("host");
   const [qrImg, setQrImg] = useState("");
   const [scannerOn, setScannerOn] = useState(false);
   const applyAnswerRef = useRef<((s: string) => Promise<void>) | null>(null);
   const scannerRef = useRef<Html5Qrcode | null>(null);
+  const { handleRemoteGroup, handleRemoteKick, setBroadcaster, setKickCaster } = useApp();
+
+  const cb = { onRemoteGroup: handleRemoteGroup, onRemoteKick: handleRemoteKick, setBroadcaster, setKickCaster };
 
   useEffect(() => {
     if (!open) {
@@ -51,6 +57,8 @@ export function QRHandshakeDialog({
       scannerRef.current?.stop().catch(() => {});
       return;
     }
+    setQrImg("");
+    setScannerOn(false);
     if (mode === "host") generateOffer();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, mode]);
@@ -58,9 +66,9 @@ export function QRHandshakeDialog({
   const generateOffer = async () => {
     setQrImg("");
     try {
-      const { sdp, applyAnswer } = await createManualOffer(groupId);
+      const { sdp, applyAnswer } = await createOfflineOffer(groupId, cb);
       applyAnswerRef.current = applyAnswer;
-      const url = buildUrl(groupId, "o", sdp);
+      const url = buildUrl(groupId, inviteToken, "o", sdp);
       const qr = await QRCode.toDataURL(url, { width: 300, margin: 1, errorCorrectionLevel: "L" });
       setQrImg(qr);
     } catch (e: any) {
@@ -107,8 +115,8 @@ export function QRHandshakeDialog({
     const parsed = parseUrl(text);
     if (!parsed || parsed.kind !== "o") { toast.error("Not an offer QR"); return; }
     try {
-      const answer = await acceptManualOffer(groupId, parsed.sdp);
-      const url = buildUrl(groupId, "a", answer);
+      const answer = await acceptOfflineOffer(groupId, parsed.sdp, cb);
+      const url = buildUrl(groupId, inviteToken, "a", answer);
       const qr = await QRCode.toDataURL(url, { width: 300, margin: 1, errorCorrectionLevel: "L" });
       setQrImg(qr);
       toast.success("Show this QR back to the host");

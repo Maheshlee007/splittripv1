@@ -9,19 +9,23 @@ import { toast } from "sonner";
 export function ShareCodeDialog({
   open,
   onOpenChange,
-  code,
+  groupId,
+  inviteToken,
   groupName,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  code: string;
+  groupId: string;
+  inviteToken?: string;
   groupName: string;
 }) {
   const [qr, setQr] = useState<string>("");
   const [copied, setCopied] = useState<"code" | "link" | null>(null);
   const [handshake, setHandshake] = useState(false);
 
-  const url = typeof window !== "undefined" ? `${window.location.origin}/?join=${code}` : `/?join=${code}`;
+  const url = typeof window !== "undefined" 
+    ? `${window.location.origin}/?trip=${groupId}&code=${inviteToken || ""}` 
+    : `/?trip=${groupId}&code=${inviteToken || ""}`;
 
   useEffect(() => {
     if (open) {
@@ -32,7 +36,7 @@ export function ShareCodeDialog({
   }, [open, url]);
 
   const copyCode = async () => {
-    await navigator.clipboard.writeText(code);
+    await navigator.clipboard.writeText(inviteToken || groupId);
     setCopied("code");
     toast.success("Code copied");
     setTimeout(() => setCopied(null), 1500);
@@ -44,7 +48,7 @@ export function ShareCodeDialog({
     setTimeout(() => setCopied(null), 1500);
   };
   const share = async () => {
-    const text = `Join my trip "${groupName}" on SplitTrip → ${url}\nCode: ${code}`;
+    const text = `Join my trip "${groupName}" on SplitTrip → ${url}\nSecret Code: ${inviteToken || groupId}`;
     if (navigator.share) {
       try { await navigator.share({ title: "Join my trip", text, url }); return; } catch {}
     }
@@ -68,7 +72,7 @@ export function ShareCodeDialog({
             onClick={copyCode}
             className="flex items-center gap-2 rounded-xl bg-secondary px-3 py-2 text-base font-mono font-semibold tracking-[0.3em] hover:bg-accent sm:text-xl"
           >
-            {code}
+            {inviteToken || groupId}
             {copied === "code" ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4 text-muted-foreground" />}
           </button>
           <button
@@ -87,7 +91,7 @@ export function ShareCodeDialog({
             <QrCode className="h-4 w-4" /> Connect via QR (offline fallback)
           </Button>
         </div>
-        <QRHandshakeDialog open={handshake} onOpenChange={setHandshake} groupId={code} />
+        <QRHandshakeDialog open={handshake} onOpenChange={setHandshake} groupId={groupId} inviteToken={inviteToken} />
       </DialogContent>
     </Dialog>
   );

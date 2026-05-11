@@ -47,7 +47,7 @@ export const ExpenseSchema = z.object({
   note: safeStr(1000).optional(),
   splitMode: SplitModeSchema,
   splits: z.array(SplitSchema).max(200),
-  billImage: z.string().max(MAX_BILL_IMAGE).optional(),
+  billImage: z.string().max(MAX_BILL_IMAGE).refine((s) => s.startsWith("data:"), { message: "Invalid data URL" }).optional(),
   createdAt: finiteTimestamp,
   date: finiteTimestamp.optional(),
   createdBy: safeStr(64),

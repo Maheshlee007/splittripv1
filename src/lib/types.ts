@@ -97,6 +97,7 @@ export interface Group {
   requests: ExpenseRequest[];
   settlements: Settlement[];
   activity?: ActivityItem[];
+  syncDisabled?: boolean;
 }
 
 export interface Profile {

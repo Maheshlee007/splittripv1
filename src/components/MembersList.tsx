@@ -9,7 +9,7 @@ import { Plus, Crown, Shield, User as UserIcon, Trash2, Check, X, Clock } from "
 import { useConfirm } from "./ConfirmDialog";
 import { toast } from "sonner";
 
-export function MembersList({ group }: { group: Group }) {
+export function MembersList({ group, onlineMembers = [] }: { group: Group, onlineMembers?: string[] }) {
   const { addMember, removeMember, setRole, profile, myRole, approveMember, rejectMember, requestLeave, clearLeaveRequest } = useApp();
   const confirm = useConfirm();
   const [open, setOpen] = useState(false);
@@ -114,6 +114,9 @@ export function MembersList({ group }: { group: Group }) {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
                     <span className="truncate text-sm font-medium">{m.name}</span>
+                    {onlineMembers.includes(m.id) && (
+                      <span className="flex h-2 w-2 rounded-full bg-success ring-2 ring-background" title="Online" />
+                    )}
                     {isMe && <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-primary">you</span>}
                     {m.leaveRequested && <span className="rounded bg-warning/15 px-1.5 py-0.5 text-[10px] font-medium text-warning">leave requested</span>}
                   </div>

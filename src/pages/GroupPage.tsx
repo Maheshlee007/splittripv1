@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Plus, Share2, Wifi, WifiOff, Trash2, FileSpreadsheet, FileText, MessageCircle, Image as ImageIcon, MoreVertical, FileJson, BarChart3, Archive, ArchiveRestore, Eye, Activity } from "lucide-react";
 import { useApp } from "@/store/AppStore";
@@ -20,6 +20,9 @@ import { exportExcel } from "@/lib/exports";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { toast } from "sonner";
+import { useWebRTCSync } from "@/hooks/useWebRTCSync";
+import { WaitingRoom } from "@/components/WaitingRoom";
+import { Group } from "@/lib/types";
 
 type PreviewKind = "pdf" | "json" | "whatsapp" | "image" | null;
 
@@ -27,7 +30,7 @@ export default function GroupPage() {
   const { id } = useParams();
   const [params] = useSearchParams();
   const nav = useNavigate();
-  const { getGroup, peers, addExpense, submitRequest, removeGroup, setArchived, myRole, profile } = useApp();
+  const { getGroup, peers, addExpense, submitRequest, removeGroup, setArchived, setSyncEnabled, myRole, profile, handleRemoteGroup, handleRemoteKick, handleTripEnded, setBroadcaster, setKickCaster, setTripPeers } = useApp();
   const confirm = useConfirm();
   const group = id ? getGroup(id) : undefined;
   const [addOpen, setAddOpen] = useState(false);
@@ -59,6 +62,48 @@ export default function GroupPage() {
   };
 
   const initialTab = params.get("tab") || "expenses";
+  const isHost = role === "owner";
+
+  const { status, onlineMembers, broadcastGroup, broadcastKick, broadcastEndTrip, disconnectAndLeave } = useWebRTCSync(
+    group.id,
+    group.inviteToken,
+    isHost,
+    profile.id,
+    handleRemoteGroup,
+    handleRemoteKick,
+    handleTripEnded,
+    () => {
+      if (group) broadcastGroup(group);
+    },
+    group.syncDisabled
+  );
+
+  useEffect(() => {
+    setTripPeers(group.id, onlineMembers);
+  }, [onlineMembers, group.id, setTripPeers]);
+
+  useEffect(() => {
+    setBroadcaster(broadcastGroup);
+    setKickCaster(broadcastKick);
+    return () => {
+      setBroadcaster(null);
+      setKickCaster(null);
+    };
+  }, [broadcastGroup, broadcastKick, setBroadcaster, setKickCaster]);
+
+  const [forceOffline, setForceOffline] = useState(false);
+
+  if (!isHost && status !== "connected" && !forceOffline) {
+    return (
+      <WaitingRoom 
+        status={status} 
+        tripId={group.id} 
+        code={group.inviteToken || ""} 
+        hasLocalData={group.expenses.length > 0}
+        onContinueOffline={() => setForceOffline(true)}
+      />
+    );
+  }
 
   return (
     <>
@@ -97,7 +142,7 @@ export default function GroupPage() {
                       onClick={async () => {
                         const next = !group.archived;
                         const ok = await confirm({
-                          title: next ? "Archive this trip?" : "Restore this trip?",
+                          title: next ? "End this trip (Read-only)?" : "Restore this trip?",
                           description: next
                             ? "Archived trips become read-only. You can restore later."
                             : "The trip becomes editable again.",
@@ -107,7 +152,7 @@ export default function GroupPage() {
                       }}
                     >
                       {group.archived ? <ArchiveRestore className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
-                      {group.archived ? "Restore trip" : "Archive trip"}
+                      {group.archived ? "Restore trip" : "End trip (Read-only)"}
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       className="text-destructive focus:text-destructive"
@@ -118,10 +163,37 @@ export default function GroupPage() {
                           confirmText: "Delete",
                           destructive: true,
                         });
-                        if (ok) { removeGroup(group.id); nav("/"); }
+                        if (ok) { 
+                          disconnectAndLeave();
+                          removeGroup(group.id); 
+                          nav("/"); 
+                        }
                       }}
                     >
                       <Trash2 className="h-4 w-4" /> Delete trip
+                    </DropdownMenuItem>
+                  </>
+                )}
+                {role !== "owner" && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      className="text-destructive focus:text-destructive"
+                      onClick={async () => {
+                        const ok = await confirm({
+                          title: "Leave this trip?",
+                          description: "You will be removed from the trip and local data deleted.",
+                          confirmText: "Leave",
+                          destructive: true,
+                        });
+                        if (ok) { 
+                          disconnectAndLeave();
+                          removeGroup(group.id); 
+                          nav("/"); 
+                        }
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4" /> Leave trip
                     </DropdownMenuItem>
                   </>
                 )}
@@ -131,7 +203,7 @@ export default function GroupPage() {
         }
       />
 
-      <div className="mx-auto w-full max-w-3xl px-4 pt-4 pb-32 md:max-w-5xl md:pb-16 xl:max-w-6xl">
+      <div className="mx-auto w-full max-w-screen-xl px-4 pt-4 pb-32 md:pb-16">
         {selfPending && (
           <div className="mb-3 rounded-xl border border-warning/30 bg-warning/5 p-3 text-xs text-warning">
             ⏳ Waiting for the trip owner to approve your join request. You'll see live updates once approved.
@@ -200,7 +272,7 @@ export default function GroupPage() {
             <RequestsList group={group} />
           </TabsContent>
           <TabsContent value="members" className="pt-4">
-            <MembersList group={group} />
+            <MembersList group={group} onlineMembers={onlineMembers} />
           </TabsContent>
         </Tabs>
       </div>
@@ -223,7 +295,7 @@ export default function GroupPage() {
         saveLabel={isAdmin ? "Add" : "Send request"}
         onSave={handleAdd}
       />
-      <ShareCodeDialog open={shareOpen} onOpenChange={setShareOpen} code={group.id} groupName={group.name} />
+      <ShareCodeDialog open={shareOpen} onOpenChange={setShareOpen} groupId={group.id} inviteToken={group.inviteToken} groupName={group.name} />
       <ExportPreview
         open={!!preview}
         onOpenChange={(v) => !v && setPreview(null)}

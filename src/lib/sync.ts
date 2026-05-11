@@ -35,6 +35,8 @@ interface Envelope {
   candidate?: RTCIceCandidateInit;
   /** for "kick": the memberId that was removed */
   memberId?: string;
+  /** for "kick": the memberId of the user performing the kick */
+  kickerId?: string;
 }
 
 interface PeerLink {
@@ -65,7 +67,7 @@ interface Slot {
 const slots = new Map<string, Slot>();
 const remoteListeners = new Set<(g: Group) => void>();
 const statusListeners = new Set<(id: string, s: SyncStatus) => void>();
-const kickListeners = new Set<(groupId: string, memberId: string) => void>();
+const kickListeners = new Set<(groupId: string, memberId: string, kickerId?: string) => void>();
 
 const topicFor = (gid: string) => `splittrip/${hashedTopicSegment(gid)}/signal`;
 const myPeerId = () => `p-${nanoid(10)}`;
@@ -248,7 +250,7 @@ function startMqtt(slot: Slot) {
         const link = slot.links.get(env.from);
         if (link) { try { link.pc.close(); } catch { /* */ } slot.links.delete(env.from); emitPeers(slot); }
       } else if (env.kind === "kick" && env.memberId) {
-        for (const fn of kickListeners) fn(slot.groupId, env.memberId);
+        for (const fn of kickListeners) fn(slot.groupId, env.memberId, env.kickerId);
       }
     } catch (e) { dlog("msg handler err", e); }
   });
@@ -308,10 +310,10 @@ export function broadcastGroup(g: Group): void {
   }
 }
 
-export function broadcastKick(groupId: string, memberId: string): void {
+export function broadcastKick(groupId: string, memberId: string, kickerId: string): void {
   const s = slots.get(groupId);
   if (!s) return;
-  publish(s, { kind: "kick", from: s.myId, memberId });
+  publish(s, { kind: "kick", from: s.myId, memberId, kickerId });
 }
 
 export function onRemoteGroup(fn: (g: Group) => void): () => void {
@@ -322,7 +324,7 @@ export function onSyncStatus(fn: (id: string, s: SyncStatus) => void): () => voi
   statusListeners.add(fn);
   return () => { statusListeners.delete(fn); };
 }
-export function onKick(fn: (groupId: string, memberId: string) => void): () => void {
+export function onKick(fn: (groupId: string, memberId: string, kickerId?: string) => void): () => void {
   kickListeners.add(fn);
   return () => { kickListeners.delete(fn); };
 }
