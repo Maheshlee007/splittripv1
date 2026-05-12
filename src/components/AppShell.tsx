@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { Outlet, NavLink, useLocation } from "react-router-dom";
-import { Home, Receipt, Inbox, Scale, User, Wifi, WifiOff, Sun, Moon, Monitor, ChevronLeft, ChevronRight, Radio } from "lucide-react";
+import { Home, Receipt, Inbox, Scale, User, Wifi, WifiOff, Sun, Moon, Monitor, ChevronLeft, ChevronRight, Radio, Download, X } from "lucide-react";
 import { useApp } from "@/store/AppStore";
 import { onSyncStatus, type SyncStatus } from "@/lib/sync";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { usePWAInstall } from "@/hooks/usePWAInstall";
 
 const tabs = [
   { to: "/", icon: Home, label: "Trips", end: true },
@@ -38,6 +39,9 @@ export default function AppShell() {
   const totalPeers = Object.values(peers).reduce((a, b) => a + b, 0);
   const [collapsed, setCollapsed] = useState<boolean>(() => localStorage.getItem("splittrip:nav-collapsed") === "1");
   const [signalingUp, setSignalingUp] = useState(false);
+  const { canInstall, promptInstall } = usePWAInstall();
+  const [installDismissed, setInstallDismissed] = useState(() => sessionStorage.getItem("splittrip:pwa-dismissed") === "1");
+  const showInstallBanner = canInstall && !installDismissed;
 
   useEffect(() => {
     localStorage.setItem("splittrip:nav-collapsed", collapsed ? "1" : "0");
@@ -73,7 +77,7 @@ export default function AppShell() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col bg-background md:flex-row">
+    <div className="flex h-screen flex-col bg-background md:flex-row overflow-hidden">
       {/* Mobile top bar */}
       <div className="sticky top-0 z-40 flex items-center justify-between border-b border-border bg-background/85 backdrop-blur safe-top px-4 py-2 md:hidden">
         <div className="flex items-center gap-2">
@@ -146,7 +150,24 @@ export default function AppShell() {
         </div>
       </aside>
 
-      <main className="flex-1 pb-20 md:pb-0">
+      {showInstallBanner && (
+        <div className="mx-auto flex w-full max-w-screen-xl items-center gap-3 border-b border-border bg-primary/5 px-4 py-2 md:px-6">
+          <Download className="h-4 w-4 shrink-0 text-primary" />
+          <p className="flex-1 text-xs">Install SplitTrip for offline use and a native app experience.</p>
+          <Button size="sm" variant="default" className="h-7 gap-1 text-xs" onClick={promptInstall}>
+            <Download className="h-3.5 w-3.5" /> Install
+          </Button>
+          <button
+            className="grid h-6 w-6 place-items-center rounded-full hover:bg-secondary"
+            onClick={() => { setInstallDismissed(true); sessionStorage.setItem("splittrip:pwa-dismissed", "1"); }}
+            aria-label="Dismiss install banner"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
+
+      <main className="flex-1 overflow-y-auto overflow-x-hidden pb-20 md:pb-0 no-scrollbar">
         <Outlet key={loc.pathname} />
       </main>
 

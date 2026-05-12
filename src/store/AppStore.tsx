@@ -678,10 +678,16 @@ export function useApp() {
  *  Security: role/status are LOCKED to local values when a local member exists,
  *  so a peer cannot promote themselves via a crafted snapshot. */
 function mergeGroups(a: Group, b: Group): Group {
+  // For name/emoji/currency: prefer the version from the side that has the real owner data,
+  // or the one that doesn't look like a placeholder "Trip XXXXX"
+  const aIsPlaceholder = /^Trip [A-Z0-9]{4,8}$/.test(a.name);
+  const bIsPlaceholder = /^Trip [A-Z0-9]{4,8}$/.test(b.name);
+  const pickName = bIsPlaceholder ? a.name : (aIsPlaceholder ? b.name : (b.name || a.name));
+  const pickEmoji = (bIsPlaceholder || b.emoji === "🧳") && a.emoji !== "🧳" ? a.emoji : (b.emoji || a.emoji);
   const merged: Group = {
     ...a,
-    name: b.name || a.name,
-    emoji: b.emoji || a.emoji,
+    name: pickName,
+    emoji: pickEmoji,
     currency: b.currency || a.currency,
     budget: b.budget ?? a.budget,
     ownerId: a.ownerId || b.ownerId,
@@ -691,9 +697,10 @@ function mergeGroups(a: Group, b: Group): Group {
     members: mergeBy(a.members, b.members, (m) => m.id, (x, y) => ({
       ...y,
       ...x,
-      // local wins on these privileged fields if local member exists
+      // role: local wins (prevents privilege escalation via crafted snapshot)
       role: x.role,
-      status: x.status ?? y.status,
+      // status: "active" wins over "pending" (owner approval propagates to member)
+      status: y.status === "active" ? "active" : x.status ?? y.status,
       // contact info: prefer freshest non-empty
       name: x.name || y.name,
       upiId: x.upiId ?? y.upiId,

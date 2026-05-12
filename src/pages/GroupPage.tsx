@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { Plus, Share2, Wifi, WifiOff, Trash2, FileSpreadsheet, FileText, MessageCircle, Image as ImageIcon, MoreVertical, FileJson, BarChart3, Archive, ArchiveRestore, Eye, Activity } from "lucide-react";
+import { Plus, Share2, Wifi, WifiOff, Trash2, FileSpreadsheet, FileText, MessageCircle, Image as ImageIcon, MoreVertical, FileJson, BarChart3, Archive, ArchiveRestore, Eye, Activity, Pencil } from "lucide-react";
 import { useApp } from "@/store/AppStore";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -30,13 +30,15 @@ export default function GroupPage() {
   const { id } = useParams();
   const [params] = useSearchParams();
   const nav = useNavigate();
-  const { getGroup, peers, addExpense, submitRequest, removeGroup, setArchived, setSyncEnabled, myRole, profile, handleRemoteGroup, handleRemoteKick, handleTripEnded, setBroadcaster, setKickCaster, setTripPeers } = useApp();
+  const { getGroup, peers, addExpense, submitRequest, removeGroup, setArchived, setSyncEnabled, updateGroup, myRole, profile, handleRemoteGroup, handleRemoteKick, handleTripEnded, setBroadcaster, setKickCaster, setTripPeers } = useApp();
   const confirm = useConfirm();
   const group = id ? getGroup(id) : undefined;
   const [addOpen, setAddOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [preview, setPreview] = useState<PreviewKind>(null);
   const dashRef = useRef<HTMLDivElement>(null);
+  const groupRef = useRef(group);
+  groupRef.current = group;
 
   if (!group) {
     return (
@@ -46,7 +48,8 @@ export default function GroupPage() {
     );
   }
 
-  const live = (peers[group.id] ?? 0) > 0;
+  const peerCount = Array.isArray(peers[group.id]) ? peers[group.id].length : 0;
+  const live = peerCount > 1;
   const role = myRole(group.id);
   const isAdmin = role === "owner" || role === "admin";
   const selfMember = group.members.find((m) => m.id === profile.id);
@@ -73,7 +76,9 @@ export default function GroupPage() {
     handleRemoteKick,
     handleTripEnded,
     () => {
-      if (group) broadcastGroup(group);
+      // Use ref to always get latest group state when a peer connects
+      const latestGroup = groupRef.current;
+      if (latestGroup) broadcastGroup(latestGroup);
     },
     group.syncDisabled
   );
@@ -92,18 +97,23 @@ export default function GroupPage() {
   }, [broadcastGroup, broadcastKick, setBroadcaster, setKickCaster]);
 
   const [forceOffline, setForceOffline] = useState(false);
+  const hasLocalData = group.expenses.length > 0;
 
-  if (!isHost && status !== "connected" && !forceOffline) {
+  // Show WaitingRoom only for non-hosts who aren't connected AND don't have local data to show
+  // If the member has local data (stale) they can continue offline
+  if (!isHost && status !== "connected" && !forceOffline && !hasLocalData) {
     return (
       <WaitingRoom 
         status={status} 
         tripId={group.id} 
         code={group.inviteToken || ""} 
-        hasLocalData={group.expenses.length > 0}
+        hasLocalData={hasLocalData}
         onContinueOffline={() => setForceOffline(true)}
       />
     );
   }
+  // If not connected but has local data, show the page with offline indicator
+  // (they'll see stale data until host comes back)
 
   return (
     <>
@@ -113,7 +123,7 @@ export default function GroupPage() {
         subtitle={
           <span className="flex items-center gap-1">
             {live ? <Wifi className="h-3 w-3 text-success" /> : <WifiOff className="h-3 w-3" />}
-            {live ? `${peers[group.id]} peer${peers[group.id] === 1 ? "" : "s"}` : "offline"}
+            {live ? `${peerCount} peer${peerCount === 1 ? "" : "s"}` : "offline"}
             <span>·</span>
             <code className="font-mono">{group.id}</code>
           </span>
@@ -128,6 +138,19 @@ export default function GroupPage() {
                 <Button size="sm" variant="ghost"><MoreVertical className="h-4 w-4" /></Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
+                {isAdmin && (
+                  <DropdownMenuItem
+                    onClick={async () => {
+                      const newName = prompt("Rename trip:", group.name);
+                      if (newName && newName.trim() && newName.trim() !== group.name) {
+                        updateGroup(group.id, (g) => ({ ...g, name: newName.trim() }));
+                        toast.success("Trip renamed");
+                      }
+                    }}
+                  >
+                    <Pencil className="h-4 w-4" /> Rename trip
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem onClick={() => exportExcel(group)}><FileSpreadsheet className="h-4 w-4" /> Export Excel</DropdownMenuItem>
                 <DropdownMenuItem onClick={() => setPreview("pdf")}><FileText className="h-4 w-4" /> Preview PDF <Eye className="ml-auto h-3.5 w-3.5 text-muted-foreground" /></DropdownMenuItem>
                 <DropdownMenuItem onClick={() => setPreview("json")}><FileJson className="h-4 w-4" /> Preview JSON <Eye className="ml-auto h-3.5 w-3.5 text-muted-foreground" /></DropdownMenuItem>

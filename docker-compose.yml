@@ -1,0 +1,16 @@
+services:
+  firebase:
+    image: spine3/firebase-emulator:latest
+    container_name: firebase_emulator
+    ports:
+      - "4000:4000" # Emulator UI
+      - "8080:8080" # Firestore
+      # - "9099:9099" # Auth
+      # - "5001:5001" # Functions
+      # - "9199:9199" # Storage
+      # - "9000:9000" # Realtime Database
+    volumes:
+      - .:/srv/firebase
+    environment:
+      - GCP_PROJECT=splittrip-p2p # Replace with your project ID
+    command: firebase emulators:start --only firestore --host 0.0.0.0

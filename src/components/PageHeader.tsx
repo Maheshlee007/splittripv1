@@ -13,7 +13,7 @@ export function PageHeader({ title, subtitle, back, actions }: PageHeaderProps) 
   const nav = useNavigate();
   return (
     <header className="sticky top-0 z-30 border-b border-border bg-background/85 backdrop-blur safe-top">
-      <div className="mx-auto flex max-w-3xl items-center gap-3 px-4 py-3">
+      <div className="mx-auto flex max-w-screen-xl items-center gap-3 px-4 py-3">
         {back && (
           <button
             onClick={() => (typeof back === "string" ? nav(back) : nav(-1))}

@@ -4,8 +4,15 @@ service cloud.firestore {
     // Firestore is used strictly as a transient WebRTC signaling channel.
     match /trips/{tripId} {
       allow read: if isValidTripId(tripId);
-      allow create, update: if isValidTripId(tripId) && isSignalingOnlyDocument();
+      allow create, update: if isValidTripId(tripId) && isSignalingDocument();
       allow delete: if isValidTripId(tripId);
+
+      // Subcollection: each peer writes their own signaling doc
+      match /peers/{peerId} {
+        allow read: if isValidTripId(tripId);
+        allow create, update: if isValidTripId(tripId) && isPeerSignalingDoc();
+        allow delete: if isValidTripId(tripId);
+      }
     }
 
     match /{document=**} {
@@ -16,11 +23,15 @@ service cloud.firestore {
       return tripId.matches('^[A-Z2-9]{6}$');
     }
 
-    function isSignalingOnlyDocument() {
-      return request.resource.data.keys().hasOnly(['ownerId', 'expireAt', 'members'])
-        && (!('ownerId' in request.resource.data) || request.resource.data.ownerId is string)
-        && (!('expireAt' in request.resource.data) || request.resource.data.expireAt is number)
-        && (!('members' in request.resource.data) || request.resource.data.members is map);
+    function isSignalingDocument() {
+      return request.resource.data.keys().hasOnly(['ownerId'])
+        && ('ownerId' in request.resource.data && request.resource.data.ownerId is string);
+    }
+
+    function isPeerSignalingDoc() {
+      return request.resource.data.keys().hasOnly(['offer', 'answer'])
+        && ('offer' in request.resource.data && request.resource.data.offer is string)
+        && (!('answer' in request.resource.data) || request.resource.data.answer is string);
     }
   }
 }

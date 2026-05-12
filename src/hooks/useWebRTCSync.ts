@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { db } from "@/lib/firebase";
-import { doc, setDoc, onSnapshot, deleteDoc, updateDoc, deleteField, getDoc } from "firebase/firestore";
+import { doc, setDoc, onSnapshot, deleteDoc, collection, getDocs } from "firebase/firestore";
 import CryptoJS from "crypto-js";
 import { Group } from "@/lib/types";
 import { safeParseGroup } from "@/lib/schema";
@@ -11,7 +11,17 @@ const ICE_SERVERS: RTCIceServer[] = [
   { urls: "stun:stun.l.google.com:19302" },
   { urls: "stun:stun1.l.google.com:19302" },
   { urls: "stun:stun2.l.google.com:19302" },
+  { urls: "stun:stun3.l.google.com:19302" },
 ];
+
+/** Time to wait for ICE gathering to complete before using available candidates */
+const ICE_GATHER_TIMEOUT = 8000;
+/** Initial delay before reconnection attempt */
+const RECONNECT_DELAY_INITIAL = 4000;
+/** Maximum delay between reconnection attempts (exponential backoff cap) */
+const RECONNECT_DELAY_MAX = 60000;
+
+const log = (...args: unknown[]) => console.log("[WebRTC]", ...args);
 
 function encrypt(secret: string, data: any): string {
   return CryptoJS.AES.encrypt(JSON.stringify(data), secret).toString();
@@ -27,6 +37,21 @@ function decrypt(secret: string, cipherText: string): any | null {
     return null;
   }
 }
+
+/**
+ * Firestore signaling structure (minimal — SDP exchange only):
+ *
+ *   trips/{tripId}                → { ownerId }           // identifies the host
+ *   trips/{tripId}/peers/{peerId} → { offer, answer? }    // per-member signaling
+ *
+ * Flow:
+ * 1. Owner opens trip → writes { ownerId } to trip doc, watches peers/ subcollection
+ * 2. Member joins → creates offer → writes { offer } to peers/{memberId}
+ * 3. Host sees new peer doc → creates answer → writes { answer } to SAME peer doc
+ * 4. Member watches ONLY their own peer doc → sees answer → connection established
+ * 5. Peer doc deleted after WebRTC connects — no more Firebase needed
+ * 6. All data (expenses, approvals, etc.) flows over WebRTC data channel
+ */
 
 export function useWebRTCSync(
   tripId: string | undefined,
@@ -48,6 +73,8 @@ export function useWebRTCSync(
   const onKickRef = useRef(onKick);
   const onTripEndedRef = useRef(onTripEnded);
   const onConnectRef = useRef(onConnect);
+  /** Track which peer offers the host is currently processing (to avoid double-handling) */
+  const processingPeersRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     onRemoteGroupRef.current = onRemoteGroup;
@@ -70,6 +97,7 @@ export function useWebRTCSync(
     pcsRef.current.forEach(pc => pc.close());
     dcsRef.current.clear();
     pcsRef.current.clear();
+    processingPeersRef.current.clear();
     setOnlineMembers([]);
     setStatus("offline");
   }, []);
@@ -96,8 +124,12 @@ export function useWebRTCSync(
 
   const broadcastGroup = useCallback((g: Group) => {
     const payload = JSON.stringify({ type: "snapshot", group: JSON.parse(JSON.stringify(g)) });
-    dcsRef.current.forEach(dc => {
-      if (dc.readyState === "open") {
+    // Only send to approved members (active status) or to "host" key used by members
+    const approvedIds = new Set(
+      g.members.filter(m => m.status === "active").map(m => m.id)
+    );
+    dcsRef.current.forEach((dc, peerId) => {
+      if (dc.readyState === "open" && (approvedIds.has(peerId) || peerId === "host")) {
         try { dc.send(payload); } catch {}
       }
     });
@@ -137,244 +169,340 @@ export function useWebRTCSync(
     } catch {}
   }, [tripId]);
 
+  /** Wait for ICE gathering with proper timeout */
+  const waitForIceGathering = useCallback((pc: RTCPeerConnection): Promise<void> => {
+    return new Promise<void>((resolve) => {
+      if (pc.iceGatheringState === "complete") return resolve();
+      const timeout = setTimeout(() => {
+        log("ICE gathering timed out, using available candidates");
+        resolve();
+      }, ICE_GATHER_TIMEOUT);
+      pc.onicegatheringstatechange = () => {
+        if (pc.iceGatheringState === "complete") {
+          clearTimeout(timeout);
+          log("ICE gathering complete");
+          resolve();
+        }
+      };
+    });
+  }, []);
+
 
   // ---------------------------------------------------------
-  // HOST LOGIC
+  // HOST LOGIC — watches peers subcollection for new offers
   // ---------------------------------------------------------
   useEffect(() => {
     if (!tripId || !code || !memberId || !isHost || syncDisabled) return;
 
+    log("Host starting signaling for trip:", tripId);
     setStatus("signaling");
     const tripRef = doc(db, "trips", tripId);
+    const peersCol = collection(db, "trips", tripId, "peers");
+    let destroyed = false;
 
-    getDoc(tripRef).then((snap) => {
-      const existing = snap.data();
-      const currentExpire = Number(existing?.expireAt ?? 0);
-      const minRequiredExpire = Date.now() + 24 * 60 * 60 * 1000;
-      const patch: Record<string, unknown> = {};
+    // Initialize the trip signaling document (ownerId only — TTL handled in production)
+    setDoc(tripRef, { ownerId: memberId }, { merge: true }).catch(console.error);
 
-      if (!existing?.ownerId) patch.ownerId = memberId;
-      if (!currentExpire || currentExpire < minRequiredExpire) {
-        patch.expireAt = Date.now() + 14 * 24 * 60 * 60 * 1000;
-      }
+    // Watch the peers subcollection for new offers
+    const unsubscribe = onSnapshot(peersCol, (snapshot) => {
+      if (destroyed) return;
 
-      if (Object.keys(patch).length > 0) {
-        setDoc(tripRef, patch, { merge: true }).catch(console.error);
-      }
-    }).catch(console.error);
-
-    const unsubscribe = onSnapshot(tripRef, (snapshot) => {
-      if (!snapshot.exists()) return;
-      const data = snapshot.data();
-      const membersMap = data.members || {};
-
-      // Check all members in the map
-      Object.keys(membersMap).forEach(async (peerId) => {
+      snapshot.docChanges().forEach(async (change) => {
+        const peerId = change.doc.id;
         if (peerId === memberId) return;
 
-        const memberData = membersMap[peerId];
-        const memberSdpEnc = memberData.memberSdp;
-        const memberVersion = memberData.version || 0;
-
-        let pc = pcsRef.current.get(peerId);
-        const currentVersion = pc ? (pc as any)._version : -1;
-
-        if (memberSdpEnc && memberVersion > currentVersion) {
-          const memberSdp = decrypt(code, memberSdpEnc);
-          if (memberSdp && memberSdp.type === "offer") {
-            if (pc) {
-              pc.close();
-              dcsRef.current.delete(peerId);
-            }
-
-            pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
-            (pc as any)._version = memberVersion;
-            pcsRef.current.set(peerId, pc);
-
-            pc.onconnectionstatechange = () => {
-              if (pc?.connectionState === "failed" || pc?.connectionState === "disconnected") {
-                updateHostPresence();
-              }
-            };
-
-            pc.ondatachannel = (ev) => {
-              const dc = ev.channel;
-              dcsRef.current.set(peerId, dc);
-              dc.onopen = () => {
-                updateHostPresence();
-                onConnectRef.current();
-              };
-              dc.onclose = updateHostPresence;
-              dc.onmessage = handleDataChannelMessage;
-            };
-
-            pc.onicecandidate = () => {};
-
-            try {
-              await pc.setRemoteDescription(memberSdp);
-              const answer = await pc.createAnswer();
-              await pc.setLocalDescription(answer);
-
-              await new Promise<void>((res) => {
-                if (pc?.iceGatheringState === "complete") return res();
-                if (pc) pc.onicegatheringstatechange = () => pc?.iceGatheringState === "complete" && res();
-                setTimeout(res, 3000);
-              });
-              
-              const finalSdp = pc.localDescription;
-              if (finalSdp) {
-                const hostSdpEnc = encrypt(code, { type: finalSdp.type, sdp: finalSdp.sdp });
-                await updateDoc(tripRef, { 
-                  [`members.${peerId}.hostSdp`]: hostSdpEnc,
-                  [`members.${peerId}.hostVersion`]: memberVersion
-                });
-              }
-            } catch (e) {
-              console.error("Host failed to process offer:", e);
-            }
+        if (change.type === "removed") {
+          // Peer doc was deleted — clean up connection if it exists
+          const existingPc = pcsRef.current.get(peerId);
+          if (existingPc) {
+            existingPc.close();
+            dcsRef.current.get(peerId)?.close();
+            pcsRef.current.delete(peerId);
+            dcsRef.current.delete(peerId);
+            processingPeersRef.current.delete(peerId);
+            updateHostPresence();
           }
+          return;
         }
-      });
 
-      // Cleanup peers that were removed from the document
-      const activePeerIds = Object.keys(membersMap);
-      pcsRef.current.forEach((pc, peerId) => {
-        if (!activePeerIds.includes(peerId) && peerId !== memberId) {
-          pc.close();
-          const dc = dcsRef.current.get(peerId);
-          if (dc) dc.close();
-          pcsRef.current.delete(peerId);
+        // added or modified — check for new offer
+        const peerData = change.doc.data();
+        const offerEnc = peerData?.offer;
+        if (!offerEnc) return;
+
+        // If already processing this peer, skip
+        if (processingPeersRef.current.has(peerId)) return;
+
+        // If we already wrote an answer and it hasn't been consumed yet, skip
+        if (peerData?.answer) return;
+
+        const offer = decrypt(code, offerEnc);
+        if (!offer || offer.type !== "offer") {
+          log("Host: failed to decrypt offer from peer:", peerId);
+          return;
+        }
+
+        log("Host: processing new offer from peer:", peerId);
+        processingPeersRef.current.add(peerId);
+
+        // Close existing connection for this peer (stale)
+        const existingPc = pcsRef.current.get(peerId);
+        if (existingPc) {
+          existingPc.close();
           dcsRef.current.delete(peerId);
-          updateHostPresence();
+        }
+
+        const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+        pcsRef.current.set(peerId, pc);
+
+        pc.onconnectionstatechange = () => {
+          if (destroyed) return;
+          const state = pc.connectionState;
+          log("Host: peer", peerId, "connection state:", state);
+          if (state === "failed" || state === "disconnected") {
+            updateHostPresence();
+          } else if (state === "connected") {
+            updateHostPresence();
+          }
+        };
+
+        pc.ondatachannel = (ev) => {
+          const dc = ev.channel;
+          log("Host: data channel received from peer:", peerId, "label:", dc.label);
+          dcsRef.current.set(peerId, dc);
+          dc.onopen = () => {
+            if (destroyed) return;
+            log("Host: data channel OPEN with peer:", peerId);
+            processingPeersRef.current.delete(peerId);
+            updateHostPresence();
+            // Send initial group state to the newly connected peer
+            onConnectRef.current();
+            // Clean up signaling doc after connection
+            deleteDoc(doc(db, "trips", tripId, "peers", peerId)).catch(() => {});
+          };
+          dc.onclose = () => {
+            log("Host: data channel closed with peer:", peerId);
+            if (!destroyed) updateHostPresence();
+          };
+          dc.onmessage = handleDataChannelMessage;
+        };
+
+        try {
+          await pc.setRemoteDescription(new RTCSessionDescription(offer));
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+
+          await waitForIceGathering(pc);
+
+          if (destroyed) return;
+
+          const finalSdp = pc.localDescription;
+          if (finalSdp) {
+            const answerEnc = encrypt(code, { type: finalSdp.type, sdp: finalSdp.sdp });
+            log("Host: writing answer for peer:", peerId);
+            // Write answer back to the SAME peer doc
+            await setDoc(doc(db, "trips", tripId, "peers", peerId), {
+              offer: offerEnc, // keep the offer so we don't re-trigger
+              answer: answerEnc,
+            });
+            log("Host: answer written for peer:", peerId);
+          }
+        } catch (e) {
+          console.error("[WebRTC] Host failed to process offer from", peerId, e);
+          processingPeersRef.current.delete(peerId);
         }
       });
     });
 
+    // Handle network changes
+    const handleNetworkChange = () => {
+      if (destroyed) return;
+      log("Host: network change, refreshing presence");
+      updateHostPresence();
+    };
+    window.addEventListener("online", handleNetworkChange);
+
     return () => {
+      destroyed = true;
+      window.removeEventListener("online", handleNetworkChange);
       unsubscribe();
       disconnectAll();
     };
-  }, [tripId, code, memberId, isHost, syncDisabled, disconnectAll, handleDataChannelMessage, updateHostPresence]);
+  }, [tripId, code, memberId, isHost, syncDisabled, disconnectAll, handleDataChannelMessage, updateHostPresence, waitForIceGathering]);
 
 
   // ---------------------------------------------------------
-  // MEMBER LOGIC
+  // MEMBER LOGIC — writes offer to own peer doc, watches for answer
   // ---------------------------------------------------------
   useEffect(() => {
     if (!tripId || !code || !memberId || isHost || syncDisabled) return;
 
+    log("Member starting signaling for trip:", tripId, "memberId:", memberId);
     setStatus("signaling");
-    const tripRef = doc(db, "trips", tripId);
-    let initialVersion = Date.now();
-    let currentVersion = initialVersion;
+    const myPeerRef = doc(db, "trips", tripId, "peers", memberId);
+    let destroyed = false;
     let pc: RTCPeerConnection | null = null;
     let dc: RTCDataChannel | null = null;
-    let unsubscribe: () => void = () => {};
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let answerApplied = false;
 
     const setupConnection = async () => {
-      if (pc) {
-        pc.close();
-        if (dc) dc.close();
-      }
+      if (destroyed) return;
+
+      log("Member: setting up connection");
+
+      // Clean up previous connection
+      if (pc) { pc.close(); pc = null; }
+      if (dc) { dc.close(); dc = null; }
+      answerApplied = false;
 
       pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
       pcsRef.current.set("host", pc);
-      (pc as any)._version = currentVersion;
 
       dc = pc.createDataChannel("expense-sync");
       dcsRef.current.set("host", dc);
-      
+
       dc.onopen = () => {
+        if (destroyed) return;
+        log("Member: data channel OPEN with host!");
+        reconnectAttempt = 0;
         setStatus("connected");
         onConnectRef.current();
+        // Clean up signaling doc after connection
+        deleteDoc(myPeerRef).catch(() => {});
       };
       dc.onclose = () => {
+        if (destroyed) return;
+        log("Member: data channel CLOSED");
         setStatus("signaling");
         setOnlineMembers([]);
+        scheduleReconnect();
       };
       dc.onmessage = handleDataChannelMessage;
 
       pc.onconnectionstatechange = () => {
-        if (pc?.connectionState === "failed" || pc?.connectionState === "disconnected") {
-          currentVersion = Date.now();
-          setupConnection();
+        if (destroyed || !pc) return;
+        const state = pc.connectionState;
+        log("Member: connection state:", state);
+        if (state === "failed") {
+          log("Member: connection failed, will reconnect");
+          setStatus("signaling");
+          scheduleReconnect();
+        } else if (state === "connected") {
+          log("Member: ICE connected to host");
         }
       };
 
-      pc.onicecandidate = () => {};
+      pc.oniceconnectionstatechange = () => {
+        if (destroyed || !pc) return;
+        log("Member: ICE connection state:", pc.iceConnectionState);
+      };
 
       try {
-        const offer = await pc.createOffer({ iceRestart: currentVersion > initialVersion });
+        const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
+        log("Member: offer created, waiting for ICE gathering...");
 
-        await new Promise<void>((res) => {
-          if (pc?.iceGatheringState === "complete") return res();
-          if (pc) pc.onicegatheringstatechange = () => pc?.iceGatheringState === "complete" && res();
-          setTimeout(res, 3000);
-        });
+        await waitForIceGathering(pc);
+
+        if (destroyed || !pc || !pc.localDescription) return;
 
         const finalSdp = pc.localDescription;
-        if (finalSdp) {
-          const memberSdpEnc = encrypt(code, { type: finalSdp.type, sdp: finalSdp.sdp });
-          
-          await setDoc(tripRef, {
-            members: {
-              [memberId]: {
-                memberSdp: memberSdpEnc,
-                version: currentVersion,
-                joinedAt: Date.now()
-              }
-            }
-          }, { merge: true });
-        }
+        const offerEnc = encrypt(code, { type: finalSdp.type, sdp: finalSdp.sdp });
+
+        log("Member: writing offer to own peer doc");
+
+        // Write offer to own peer document (create or overwrite — removes any stale answer)
+        await setDoc(myPeerRef, { offer: offerEnc });
+
+        log("Member: offer written successfully");
 
       } catch (e) {
-        console.error("Member failed to create offer:", e);
-        setStatus("failed");
+        console.error("[WebRTC] Member failed to create offer:", e);
+        if (!destroyed) {
+          setStatus("failed");
+          scheduleReconnect();
+        }
       }
     };
 
+    let reconnectAttempt = 0;
+
+    const scheduleReconnect = () => {
+      if (destroyed || reconnectTimer) return;
+      const delay = Math.min(RECONNECT_DELAY_INITIAL * Math.pow(2, reconnectAttempt), RECONNECT_DELAY_MAX);
+      reconnectAttempt++;
+      log("Member: scheduling reconnect in", delay, "ms (attempt", reconnectAttempt, ")");
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        if (destroyed) return;
+        setupConnection();
+      }, delay);
+    };
+
+    // Start initial connection
     setupConnection();
 
-    unsubscribe = onSnapshot(tripRef, async (snap) => {
-      if (!snap.exists()) return;
+    // Watch own peer doc for the host's answer
+    const unsubscribe = onSnapshot(myPeerRef, async (snap) => {
+      if (destroyed || !snap.exists()) return;
       const data = snap.data();
-      const myData = data.members?.[memberId] || {};
-      const hostSdpEnc = myData.hostSdp;
-      const hostVersion = myData.hostVersion || 0;
+      const answerEnc = data?.answer;
 
-      if (pc && hostSdpEnc && hostVersion === currentVersion && pc.signalingState === "have-local-offer") {
-        const hostSdp = decrypt(code, hostSdpEnc);
-        if (hostSdp && hostSdp.type === "answer") {
-          try {
-            await pc.setRemoteDescription(hostSdp);
-            await updateDoc(tripRef, {
-              [`members.${memberId}.hostSdp`]: deleteField(),
-              [`members.${memberId}.memberSdp`]: deleteField(),
-            });
-          } catch (e) {
-             console.error("Member failed to set remote answer:", e);
-          }
-        }
+      if (!answerEnc || answerApplied) return;
+      if (!pc || pc.signalingState !== "have-local-offer") return;
+
+      const answer = decrypt(code, answerEnc);
+      if (!answer || answer.type !== "answer") {
+        log("Member: failed to decrypt answer or not an answer type");
+        return;
+      }
+
+      try {
+        log("Member: applying host answer SDP");
+        answerApplied = true;
+        await pc.setRemoteDescription(new RTCSessionDescription(answer));
+        log("Member: remote description set successfully!");
+      } catch (e) {
+        console.error("[WebRTC] Member failed to set remote answer:", e);
+        answerApplied = false;
+        scheduleReconnect();
       }
     });
 
+    // Handle network changes (WiFi switch)
+    const handleNetworkChange = () => {
+      if (destroyed) return;
+      log("Member: network change detected, reconnecting");
+      setupConnection();
+    };
+    window.addEventListener("online", handleNetworkChange);
+
     return () => {
+      destroyed = true;
+      window.removeEventListener("online", handleNetworkChange);
+      if (reconnectTimer) clearTimeout(reconnectTimer);
       unsubscribe();
       if (pc) pc.close();
       if (dc) dc.close();
       disconnectAll();
     };
-  }, [tripId, code, memberId, isHost, syncDisabled, disconnectAll, handleDataChannelMessage]);
+  }, [tripId, code, memberId, isHost, syncDisabled, disconnectAll, handleDataChannelMessage, waitForIceGathering]);
 
   const disconnectAndLeave = useCallback(async () => {
     disconnectAll();
     if (!tripId || !memberId) return;
-    const tripRef = doc(db, "trips", tripId);
     if (isHost) {
-      try { await deleteDoc(tripRef); } catch {}
+      // Delete the trip doc and all peer subdocs
+      const peersCol = collection(db, "trips", tripId, "peers");
+      try {
+        const snap = await getDocs(peersCol);
+        await Promise.all(snap.docs.map(d => deleteDoc(d.ref)));
+      } catch {}
+      try { await deleteDoc(doc(db, "trips", tripId)); } catch {}
     } else {
-      try { await updateDoc(tripRef, { [`members.${memberId}`]: deleteField() }); } catch {}
+      // Delete own peer doc
+      try { await deleteDoc(doc(db, "trips", tripId, "peers", memberId)); } catch {}
     }
   }, [disconnectAll, tripId, memberId, isHost]);
 
