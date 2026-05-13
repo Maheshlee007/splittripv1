@@ -208,6 +208,7 @@ export function QRHandshakeDialog({
         </DialogHeader>
         <p className="text-xs text-muted-foreground">
           Use this when normal sync isn't connecting. Scan a QR or paste the SDP text directly for manual connection.
+          <br /><span className="font-medium text-warning">Note:</span> QR pairing connects one member at a time. Both devices must be nearby.
         </p>
         <Tabs value={mode} onValueChange={(v) => setMode(v as Mode)}>
           <TabsList className="grid w-full grid-cols-2">

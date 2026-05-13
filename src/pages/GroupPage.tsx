@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { Plus, Share2, Wifi, WifiOff, Trash2, FileSpreadsheet, FileText, MessageCircle, Image as ImageIcon, MoreVertical, FileJson, BarChart3, Archive, ArchiveRestore, Eye, Activity, Pencil } from "lucide-react";
+import { Plus, Share2, Wifi, WifiOff, Trash2, FileSpreadsheet, FileText, MessageCircle, Image as ImageIcon, MoreVertical, FileJson, BarChart3, Archive, ArchiveRestore, Eye, Activity, Pencil, RefreshCw } from "lucide-react";
 import { useApp } from "@/store/AppStore";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -67,7 +67,7 @@ export default function GroupPage() {
   const initialTab = params.get("tab") || "expenses";
   const isHost = role === "owner";
 
-  const { status, onlineMembers, broadcastGroup, broadcastKick, broadcastEndTrip, disconnectAndLeave } = useWebRTCSync(
+  const { status, onlineMembers, broadcastGroup, broadcastKick, broadcastEndTrip, disconnectAndLeave, reconnect } = useWebRTCSync(
     group.id,
     group.inviteToken,
     isHost,
@@ -98,10 +98,11 @@ export default function GroupPage() {
 
   const [forceOffline, setForceOffline] = useState(false);
   const hasLocalData = group.expenses.length > 0;
+  const wasApproved = selfMember?.status === "active";
 
-  // Show WaitingRoom only for non-hosts who aren't connected AND don't have local data to show
-  // If the member has local data (stale) they can continue offline
-  if (!isHost && status !== "connected" && !forceOffline && !hasLocalData) {
+  // Show WaitingRoom only for non-hosts who haven't been approved yet AND don't have local data
+  // Once approved (even if offline), member sees the trip page; WebRTC reconnects in background
+  if (!isHost && !wasApproved && status !== "connected" && !forceOffline && !hasLocalData) {
     return (
       <WaitingRoom 
         status={status} 
@@ -124,12 +125,20 @@ export default function GroupPage() {
           <span className="flex items-center gap-1">
             {live ? <Wifi className="h-3 w-3 text-success" /> : <WifiOff className="h-3 w-3" />}
             {live ? `${peerCount} peer${peerCount === 1 ? "" : "s"}` : "offline"}
+            {status === "signaling" && wasApproved && (
+              <span className="text-[10px] text-warning animate-pulse ml-1">reconnecting…</span>
+            )}
             <span>·</span>
             <code className="font-mono">{group.id}</code>
           </span>
         }
         actions={
           <div className="flex items-center gap-1">
+            {status !== "connected" && !group.syncDisabled && (
+              <Button size="sm" variant="ghost" onClick={reconnect} title="Reconnect">
+                <RefreshCw className="h-4 w-4" />
+              </Button>
+            )}
             <Button size="sm" variant="ghost" onClick={() => setShareOpen(true)}>
               <Share2 className="h-4 w-4" />
             </Button>
@@ -255,7 +264,7 @@ export default function GroupPage() {
         </div>
 
         <Tabs defaultValue={initialTab}>
-          <div className="-mx-1 overflow-x-auto pb-1">
+          <div className="sticky top-0 z-10 -mx-1 overflow-x-auto pb-1 bg-background pt-1">
             <TabsList className="inline-flex w-max min-w-full gap-1 px-1">
               <TabsTrigger value="expenses" className="shrink-0 px-3">Expenses</TabsTrigger>
               <TabsTrigger value="balances" className="shrink-0 px-3">Balances</TabsTrigger>

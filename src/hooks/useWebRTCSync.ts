@@ -4,6 +4,7 @@ import { doc, setDoc, onSnapshot, deleteDoc, collection, getDocs } from "firebas
 import CryptoJS from "crypto-js";
 import { Group } from "@/lib/types";
 import { safeParseGroup } from "@/lib/schema";
+import { toast } from "sonner";
 
 export type SyncStatus = "connecting" | "signaling" | "connected" | "offline" | "failed";
 
@@ -20,6 +21,8 @@ const ICE_GATHER_TIMEOUT = 8000;
 const RECONNECT_DELAY_INITIAL = 4000;
 /** Maximum delay between reconnection attempts (exponential backoff cap) */
 const RECONNECT_DELAY_MAX = 60000;
+/** SDP offer timeout — if host doesn't answer within this, re-offer with fresh ICE */
+const SDP_OFFER_TIMEOUT = 90_000;
 
 const log = (...args: unknown[]) => console.log("[WebRTC]", ...args);
 
@@ -41,15 +44,15 @@ function decrypt(secret: string, cipherText: string): any | null {
 /**
  * Firestore signaling structure (minimal — SDP exchange only):
  *
- *   trips/{tripId}                → { ownerId }           // identifies the host
- *   trips/{tripId}/peers/{peerId} → { offer, answer? }    // per-member signaling
+ *   trips/{tripId}                    → { ownerId }                 // identifies host
+ *   trips/{tripId}/peers/{peerId}     → { memberSdp, hostSdp? }    // per-member signaling
  *
  * Flow:
  * 1. Owner opens trip → writes { ownerId } to trip doc, watches peers/ subcollection
- * 2. Member joins → creates offer → writes { offer } to peers/{memberId}
- * 3. Host sees new peer doc → creates answer → writes { answer } to SAME peer doc
- * 4. Member watches ONLY their own peer doc → sees answer → connection established
- * 5. Peer doc deleted after WebRTC connects — no more Firebase needed
+ * 2. Member joins → creates offer → writes { memberSdp } to peers/{memberId}
+ * 3. Host sees new peer doc → creates answer → writes { hostSdp } to SAME peer doc
+ * 4. Member watches ONLY their own peer doc → sees hostSdp → connection established
+ * 5. Peer doc is KEPT (not deleted) — enables reconnection without extra writes
  * 6. All data (expenses, approvals, etc.) flows over WebRTC data channel
  */
 
@@ -66,6 +69,7 @@ export function useWebRTCSync(
 ) {
   const [status, setStatus] = useState<SyncStatus>("offline");
   const [onlineMembers, setOnlineMembers] = useState<string[]>([]);
+  const [reconnectTrigger, setReconnectTrigger] = useState(0);
 
   const pcsRef = useRef<Map<string, RTCPeerConnection>>(new Map());
   const dcsRef = useRef<Map<string, RTCDataChannel>>(new Map());
@@ -200,8 +204,11 @@ export function useWebRTCSync(
     const peersCol = collection(db, "trips", tripId, "peers");
     let destroyed = false;
 
-    // Initialize the trip signaling document (ownerId only — TTL handled in production)
-    setDoc(tripRef, { ownerId: memberId }, { merge: true }).catch(console.error);
+    // Initialize the trip signaling document (ownerId only)
+    setDoc(tripRef, { ownerId: memberId }, { merge: true }).catch((err) => {
+      console.error("[WebRTC] Failed to write trip doc:", err);
+      toast.error("Signaling failed — check connection or use QR fallback");
+    });
 
     // Watch the peers subcollection for new offers
     const unsubscribe = onSnapshot(peersCol, (snapshot) => {
@@ -212,9 +219,9 @@ export function useWebRTCSync(
         if (peerId === memberId) return;
 
         if (change.type === "removed") {
-          // Peer doc was deleted — clean up connection if it exists
+          // Only tear down if the connection is already dead
           const existingPc = pcsRef.current.get(peerId);
-          if (existingPc) {
+          if (existingPc && (existingPc.connectionState === "failed" || existingPc.connectionState === "closed")) {
             existingPc.close();
             dcsRef.current.get(peerId)?.close();
             pcsRef.current.delete(peerId);
@@ -227,14 +234,14 @@ export function useWebRTCSync(
 
         // added or modified — check for new offer
         const peerData = change.doc.data();
-        const offerEnc = peerData?.offer;
+        const offerEnc = peerData?.memberSdp;
         if (!offerEnc) return;
 
         // If already processing this peer, skip
         if (processingPeersRef.current.has(peerId)) return;
 
         // If we already wrote an answer and it hasn't been consumed yet, skip
-        if (peerData?.answer) return;
+        if (peerData?.hostSdp) return;
 
         const offer = decrypt(code, offerEnc);
         if (!offer || offer.type !== "offer") {
@@ -277,8 +284,6 @@ export function useWebRTCSync(
             updateHostPresence();
             // Send initial group state to the newly connected peer
             onConnectRef.current();
-            // Clean up signaling doc after connection
-            deleteDoc(doc(db, "trips", tripId, "peers", peerId)).catch(() => {});
           };
           dc.onclose = () => {
             log("Host: data channel closed with peer:", peerId);
@@ -299,19 +304,24 @@ export function useWebRTCSync(
           const finalSdp = pc.localDescription;
           if (finalSdp) {
             const answerEnc = encrypt(code, { type: finalSdp.type, sdp: finalSdp.sdp });
-            log("Host: writing answer for peer:", peerId);
-            // Write answer back to the SAME peer doc
+            log("Host: writing hostSdp for peer:", peerId);
+            // Write answer back to the SAME peer doc (keep memberSdp to avoid re-trigger)
             await setDoc(doc(db, "trips", tripId, "peers", peerId), {
-              offer: offerEnc, // keep the offer so we don't re-trigger
-              answer: answerEnc,
+              memberSdp: offerEnc,
+              hostSdp: answerEnc,
             });
-            log("Host: answer written for peer:", peerId);
+            log("Host: hostSdp written for peer:", peerId);
           }
         } catch (e) {
           console.error("[WebRTC] Host failed to process offer from", peerId, e);
           processingPeersRef.current.delete(peerId);
+          toast.error("Failed to process peer connection — try again");
         }
       });
+    }, (err) => {
+      console.error("[WebRTC] Host: Firestore snapshot error:", err);
+      toast.error("Signaling connection lost — use QR fallback if needed");
+      setStatus("failed");
     });
 
     // Handle network changes
@@ -328,7 +338,7 @@ export function useWebRTCSync(
       unsubscribe();
       disconnectAll();
     };
-  }, [tripId, code, memberId, isHost, syncDisabled, disconnectAll, handleDataChannelMessage, updateHostPresence, waitForIceGathering]);
+  }, [tripId, code, memberId, isHost, syncDisabled, reconnectTrigger, disconnectAll, handleDataChannelMessage, updateHostPresence, waitForIceGathering]);
 
 
   // ---------------------------------------------------------
@@ -344,6 +354,7 @@ export function useWebRTCSync(
     let pc: RTCPeerConnection | null = null;
     let dc: RTCDataChannel | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let offerTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
     let answerApplied = false;
 
     const setupConnection = async () => {
@@ -351,9 +362,10 @@ export function useWebRTCSync(
 
       log("Member: setting up connection");
 
-      // Clean up previous connection
+      // Clean up previous connection + timers
       if (pc) { pc.close(); pc = null; }
       if (dc) { dc.close(); dc = null; }
+      if (offerTimeoutTimer) { clearTimeout(offerTimeoutTimer); offerTimeoutTimer = null; }
       answerApplied = false;
 
       pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
@@ -366,10 +378,10 @@ export function useWebRTCSync(
         if (destroyed) return;
         log("Member: data channel OPEN with host!");
         reconnectAttempt = 0;
+        if (offerTimeoutTimer) { clearTimeout(offerTimeoutTimer); offerTimeoutTimer = null; }
         setStatus("connected");
         onConnectRef.current();
-        // Clean up signaling doc after connection
-        deleteDoc(myPeerRef).catch(() => {});
+        // Do NOT delete peer doc — keep it for reconnection (saves Firebase operations)
       };
       dc.onclose = () => {
         if (destroyed) return;
@@ -410,17 +422,27 @@ export function useWebRTCSync(
         const finalSdp = pc.localDescription;
         const offerEnc = encrypt(code, { type: finalSdp.type, sdp: finalSdp.sdp });
 
-        log("Member: writing offer to own peer doc");
+        log("Member: writing memberSdp to own peer doc");
 
-        // Write offer to own peer document (create or overwrite — removes any stale answer)
-        await setDoc(myPeerRef, { offer: offerEnc });
+        // Write offer to own peer document (overwrite — removes stale hostSdp)
+        await setDoc(myPeerRef, { memberSdp: offerEnc });
 
-        log("Member: offer written successfully");
+        log("Member: memberSdp written successfully");
+
+        // Auto-refresh offer if host doesn't respond within SDP_OFFER_TIMEOUT
+        // ICE candidates expire due to NAT binding timeouts (30s–2min)
+        offerTimeoutTimer = setTimeout(() => {
+          if (!destroyed && !answerApplied) {
+            log("Member: offer timed out (ICE candidates likely expired), re-offering");
+            setupConnection();
+          }
+        }, SDP_OFFER_TIMEOUT);
 
       } catch (e) {
         console.error("[WebRTC] Member failed to create offer:", e);
         if (!destroyed) {
           setStatus("failed");
+          toast.error("Connection failed — try QR fallback if host is unavailable");
           scheduleReconnect();
         }
       }
@@ -447,20 +469,21 @@ export function useWebRTCSync(
     const unsubscribe = onSnapshot(myPeerRef, async (snap) => {
       if (destroyed || !snap.exists()) return;
       const data = snap.data();
-      const answerEnc = data?.answer;
+      const answerEnc = data?.hostSdp;
 
       if (!answerEnc || answerApplied) return;
       if (!pc || pc.signalingState !== "have-local-offer") return;
 
       const answer = decrypt(code, answerEnc);
       if (!answer || answer.type !== "answer") {
-        log("Member: failed to decrypt answer or not an answer type");
+        log("Member: failed to decrypt hostSdp or not an answer type");
         return;
       }
 
       try {
         log("Member: applying host answer SDP");
         answerApplied = true;
+        if (offerTimeoutTimer) { clearTimeout(offerTimeoutTimer); offerTimeoutTimer = null; }
         await pc.setRemoteDescription(new RTCSessionDescription(answer));
         log("Member: remote description set successfully!");
       } catch (e) {
@@ -468,6 +491,10 @@ export function useWebRTCSync(
         answerApplied = false;
         scheduleReconnect();
       }
+    }, (err) => {
+      console.error("[WebRTC] Member: Firestore snapshot error:", err);
+      toast.error("Signaling connection lost — use QR fallback if needed");
+      setStatus("failed");
     });
 
     // Handle network changes (WiFi switch)
@@ -482,18 +509,19 @@ export function useWebRTCSync(
       destroyed = true;
       window.removeEventListener("online", handleNetworkChange);
       if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (offerTimeoutTimer) clearTimeout(offerTimeoutTimer);
       unsubscribe();
       if (pc) pc.close();
       if (dc) dc.close();
       disconnectAll();
     };
-  }, [tripId, code, memberId, isHost, syncDisabled, disconnectAll, handleDataChannelMessage, waitForIceGathering]);
+  }, [tripId, code, memberId, isHost, syncDisabled, reconnectTrigger, disconnectAll, handleDataChannelMessage, waitForIceGathering]);
 
   const disconnectAndLeave = useCallback(async () => {
     disconnectAll();
     if (!tripId || !memberId) return;
     if (isHost) {
-      // Delete the trip doc and all peer subdocs
+      // Delete the trip doc and all peer subdocs (permanent leave/delete only)
       const peersCol = collection(db, "trips", tripId, "peers");
       try {
         const snap = await getDocs(peersCol);
@@ -506,5 +534,10 @@ export function useWebRTCSync(
     }
   }, [disconnectAll, tripId, memberId, isHost]);
 
-  return { status, onlineMembers, broadcastGroup, broadcastKick: broadcastKickFn, broadcastEndTrip, disconnectAndLeave };
+  const reconnect = useCallback(() => {
+    disconnectAll();
+    setReconnectTrigger(prev => prev + 1);
+  }, [disconnectAll]);
+
+  return { status, onlineMembers, broadcastGroup, broadcastKick: broadcastKickFn, broadcastEndTrip, disconnectAndLeave, reconnect };
 }

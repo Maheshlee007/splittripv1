@@ -5,6 +5,7 @@ import { useApp } from "@/store/AppStore";
 import { onSyncStatus, type SyncStatus } from "@/lib/sync";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { usePWAInstall } from "@/hooks/usePWAInstall";
 
 const tabs = [
@@ -36,12 +37,21 @@ function ThemeToggle({ compact = false }: { compact?: boolean }) {
 export default function AppShell() {
   const { ready, peers } = useApp();
   const loc = useLocation();
-  const totalPeers = Object.values(peers).reduce((a, b) => a + b, 0);
+  const totalPeers = Object.values(peers).reduce((a, b) => a + b.length, 0);
   const [collapsed, setCollapsed] = useState<boolean>(() => localStorage.getItem("splittrip:nav-collapsed") === "1");
   const [signalingUp, setSignalingUp] = useState(false);
-  const { canInstall, promptInstall } = usePWAInstall();
+  const { canInstall, isInstalled, promptInstall } = usePWAInstall();
   const [installDismissed, setInstallDismissed] = useState(() => sessionStorage.getItem("splittrip:pwa-dismissed") === "1");
-  const showInstallBanner = canInstall && !installDismissed;
+  const isDesktop = typeof window !== "undefined" && !("ontouchstart" in window);
+  const showInstallBanner = canInstall && !installDismissed && !isDesktop;
+  const [showInstallModal, setShowInstallModal] = useState(false);
+
+  // Desktop: show modal on first visit if installable
+  useEffect(() => {
+    if (canInstall && isDesktop && !installDismissed) {
+      setShowInstallModal(true);
+    }
+  }, [canInstall, isDesktop, installDismissed]);
 
   useEffect(() => {
     localStorage.setItem("splittrip:nav-collapsed", collapsed ? "1" : "0");
@@ -197,6 +207,46 @@ export default function AppShell() {
           </NavLink>
         ))}
       </nav>
+
+      {/* Desktop PWA install modal */}
+      <Dialog open={showInstallModal} onOpenChange={(v) => {
+        if (!v) {
+          setShowInstallModal(false);
+          setInstallDismissed(true);
+          sessionStorage.setItem("splittrip:pwa-dismissed", "1");
+        }
+      }}>
+        <DialogContent className="w-[calc(100vw-2rem)] max-w-sm text-center">
+          <DialogHeader>
+            <DialogTitle className="flex flex-col items-center gap-3">
+              <div className="grid h-14 w-14 place-items-center rounded-2xl gradient-primary text-primary-foreground text-xl font-bold">S</div>
+              Install SplitTrip
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Get a native app experience with offline support, faster loading, and no browser chrome.
+          </p>
+          {isInstalled ? (
+            <p className="text-sm font-medium text-success">App installed! You can open it from your desktop now.</p>
+          ) : (
+            <div className="flex flex-col gap-2 pt-2">
+              <Button className="w-full gap-2" onClick={async () => {
+                const ok = await promptInstall();
+                if (ok) setTimeout(() => setShowInstallModal(false), 1500);
+              }}>
+                <Download className="h-4 w-4" /> Install App
+              </Button>
+              <Button variant="ghost" className="w-full" onClick={() => {
+                setShowInstallModal(false);
+                setInstallDismissed(true);
+                sessionStorage.setItem("splittrip:pwa-dismissed", "1");
+              }}>
+                Maybe later
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

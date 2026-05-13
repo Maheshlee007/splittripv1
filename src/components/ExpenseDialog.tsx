@@ -166,187 +166,237 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[calc(100vw-1.5rem)] max-w-3xl max-h-[92vh] overflow-y-auto p-4 sm:p-6">
-        <DialogHeader>
+      <DialogContent className="flex flex-col w-[calc(100vw-1rem)] max-w-4xl max-h-[92vh] overflow-hidden p-0">
+        <DialogHeader className="shrink-0 border-b border-border px-4 py-3 sm:px-6">
           <DialogTitle>{title ?? "Add expense"}</DialogTitle>
         </DialogHeader>
 
-        <div className="grid gap-4 md:grid-cols-2">
-          <div>
-            <Label>Description</Label>
-            <Input value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Dinner at beach shack" autoFocus />
-          </div>
+        <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-6">
+          <div className="grid gap-4 md:grid-cols-[1fr,1fr]">
+            {/* LEFT COLUMN — expense details */}
+            <div className="space-y-3">
+              <div>
+                <Label>Description</Label>
+                <Input value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Dinner at beach shack" autoFocus />
+              </div>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div>
-              <Label>Amount ({group.currency})</Label>
-              <Input
-                inputMode="decimal"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ""))}
-                placeholder="0.00"
-              />
-            </div>
-            <div>
-              <Label>Paid by</Label>
-              <select
-                value={paidBy}
-                onChange={(e) => setPaidBy(e.target.value)}
-                className="mt-2 flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              >
-                {group.members.map((m) => (
-                  <option key={m.id} value={m.id}>{m.name}</option>
-                ))}
-              </select>
-            </div>
-            <div className="sm:col-span-2">
-              <Label>Date</Label>
-              <Input type="date" value={expenseDate} onChange={(e) => setExpenseDate(e.target.value)} />
-            </div>
-          </div>
-
-          <div>
-            <Label>Category</Label>
-            <div className="mt-1 flex gap-2 overflow-x-auto pb-1 no-scrollbar">
-              {CATEGORIES.map((c) => {
-                const Icon = c.icon;
-                const active = c.id === category;
-                return (
-                  <button
-                    key={c.id}
-                    onClick={() => setCategory(c.id)}
-                    className={cn(
-                      "flex shrink-0 flex-col items-center gap-1 rounded-xl px-3 py-2 text-[11px] font-medium transition",
-                      active ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground"
-                    )}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label>Amount ({group.currency})</Label>
+                  <Input
+                    inputMode="decimal"
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ""))}
+                    placeholder="0.00"
+                  />
+                </div>
+                <div>
+                  <Label>Paid by</Label>
+                  <select
+                    value={paidBy}
+                    onChange={(e) => setPaidBy(e.target.value)}
+                    className="mt-2 flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                   >
-                    <Icon className="h-4 w-4" />
-                    {c.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+                    {group.members.map((m) => (
+                      <option key={m.id} value={m.id}>{m.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
 
-          <div>
-            <div className="flex items-center justify-between gap-2">
-              <Label className="flex items-center gap-1.5"><Users className="h-3.5 w-3.5" /> Split among</Label>
-              <div className="flex flex-wrap items-center gap-1 rounded-lg bg-secondary p-1">
-                {MODES.map((m) => (
-                  <button
-                    key={m.id}
-                    onClick={() => setMode(m.id)}
-                    className={cn(
-                      "rounded-md px-2 py-1 text-[11px] font-medium",
-                      mode === m.id ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"
-                    )}
-                  >
-                    {m.label}
-                  </button>
-                ))}
+              <div className="grid grid-cols-[1fr,auto] gap-2 items-end">
+                <div>
+                  <Label>Category</Label>
+                  <div className="mt-1 flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+                    {CATEGORIES.map((c) => {
+                      const Icon = c.icon;
+                      const active = c.id === category;
+                      return (
+                        <button
+                          key={c.id}
+                          onClick={() => setCategory(c.id)}
+                          className={cn(
+                            "flex shrink-0 flex-col items-center gap-0.5 rounded-lg px-2 py-1.5 text-[10px] font-medium transition",
+                            active ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground"
+                          )}
+                        >
+                          <Icon className="h-3.5 w-3.5" />
+                          {c.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="w-[120px]">
+                  <Label>Date</Label>
+                  <Input type="date" value={expenseDate} onChange={(e) => setExpenseDate(e.target.value)} className="text-xs" />
+                </div>
+              </div>
+
+              {/* Bill + note (visible on desktop below left col, on mobile it shows after split) */}
+              <div className="hidden md:block space-y-3">
+                <div>
+                  <Label className="flex items-center gap-1.5"><ImageIcon className="h-3.5 w-3.5" /> Bill photo (optional)</Label>
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    hidden
+                    onChange={(e) => handleFile(e.target.files?.[0])}
+                  />
+                  {billImage ? (
+                    <div className="relative mt-1 overflow-hidden rounded-xl border border-border">
+                      <img src={billImage} alt="Bill" className="max-h-40 w-full object-contain bg-secondary" />
+                      <button
+                        onClick={() => setBillImage(undefined)}
+                        className="absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-full bg-background/90 text-destructive shadow-card hover:bg-destructive/10"
+                        aria-label="Remove bill photo"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => fileRef.current?.click()}
+                      className="mt-1 flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-border bg-secondary/30 px-3 py-2.5 text-xs font-medium text-muted-foreground hover:bg-secondary"
+                    >
+                      <Camera className="h-4 w-4" /> Attach bill photo
+                    </button>
+                  )}
+                  <p className="mt-1 text-[10px] text-muted-foreground">
+                    Stored locally & synced peer-to-peer.
+                  </p>
+                </div>
+                <div>
+                  <Label>Note (optional)</Label>
+                  <Textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="Anything to remember…" />
+                </div>
               </div>
             </div>
-            <div className="mt-1 flex items-center gap-2 text-[11px]">
-              <span className="text-muted-foreground">{participants.size} of {group.members.length} included</span>
-              <button onClick={allOn} className="ml-auto inline-flex items-center gap-1 rounded-md bg-secondary px-2 py-0.5 hover:bg-accent">
-                <UserCheck className="h-3 w-3" /> All
-              </button>
-              <button onClick={allOff} className="inline-flex items-center gap-1 rounded-md bg-secondary px-2 py-0.5 hover:bg-accent">
-                <UserX className="h-3 w-3" /> None
-              </button>
-            </div>
-            <div className="mt-2 max-h-64 space-y-1 overflow-y-auto rounded-xl border border-border p-2">
-              {group.members.map((m) => {
-                const checked = participants.has(m.id);
-                const owed =
-                  checked && amountNum > 0
-                    ? computeShareAmount(amountNum, mode, splits, m.id)
-                    : 0;
-                return (
-                  <label
-                    key={m.id}
-                    className={cn(
-                      "flex items-center gap-2 rounded-lg px-2 py-1.5 cursor-pointer transition",
-                      checked ? "bg-primary/5" : "opacity-60 hover:opacity-100 hover:bg-secondary/50"
-                    )}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => toggleP(m.id)}
-                      className="h-4 w-4 accent-[hsl(var(--primary))]"
-                    />
-                    <span className="min-w-0 flex-1 truncate text-sm">{m.name}</span>
-                    {checked && mode !== "equal" && (
-                      <Input
-                        inputMode="decimal"
-                        value={splitValues[m.id] ?? ""}
-                        onChange={(e) =>
-                          setSplitValues((sv) => ({ ...sv, [m.id]: e.target.value.replace(/[^\d.]/g, "") }))
-                        }
-                        placeholder={mode === "percent" ? "%" : mode === "exact" ? "amt" : "shares"}
-                        className="h-8 w-16 sm:w-20 text-right text-sm"
-                      />
-                    )}
-                    <span className={cn("w-16 sm:w-20 text-right text-xs tabular-nums", checked ? "text-foreground" : "text-muted-foreground line-through")}>
-                      {checked ? fmtMoney(owed, group.currency) : "excluded"}
-                    </span>
-                  </label>
-                );
-              })}
-            </div>
-            {exactInvalid && (
-              <p className="mt-1 text-xs text-destructive">
-                Sum {fmtMoney(sumExact, group.currency)} must equal {fmtMoney(amountNum, group.currency)}
-              </p>
-            )}
-            {percentInvalid && (
-              <p className="mt-1 text-xs text-destructive">Percentages must add to 100 (currently {sumPercent.toFixed(1)}%)</p>
-            )}
-          </div>
 
-          {/* Full-width: bill + note */}
-          <div className="md:col-span-2">
-            <Label className="flex items-center gap-1.5"><ImageIcon className="h-3.5 w-3.5" /> Bill photo (optional)</Label>
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/*"
-              capture="environment"
-              hidden
-              onChange={(e) => handleFile(e.target.files?.[0])}
-            />
-            {billImage ? (
-              <div className="relative mt-1 overflow-hidden rounded-xl border border-border">
-                <img src={billImage} alt="Bill" className="max-h-64 w-full object-contain bg-secondary" />
-                <button
-                  onClick={() => setBillImage(undefined)}
-                  className="absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-full bg-background/90 text-destructive shadow-card hover:bg-destructive/10"
-                  aria-label="Remove bill photo"
-                >
-                  <X className="h-4 w-4" />
+            {/* RIGHT COLUMN — split members */}
+            <div>
+              <div className="flex flex-col items-start justify-center  gap-2 mb-2">
+                <Label className="flex items-center  gap-1.5"><Users className="h-3.5 w-3.5" /> Split among</Label>
+                <div className="flex flex-wrap items-center gap-0.5 rounded-lg bg-secondary p-0.5">
+                  {MODES.map((m) => (
+                    <button
+                      key={m.id}
+                      onClick={() => setMode(m.id)}
+                      className={cn(
+                        "rounded-md px-2 py-1 text-[11px] font-medium",
+                        mode === m.id ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"
+                      )}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="mt-1 flex items-center gap-2 text-[11px]">
+                <span className="text-muted-foreground">{participants.size} of {group.members.length} included</span>
+                <button onClick={allOn} className="ml-auto inline-flex items-center gap-1 rounded-md bg-secondary px-2 py-0.5 hover:bg-accent">
+                  <UserCheck className="h-3 w-3" /> All
+                </button>
+                <button onClick={allOff} className="inline-flex items-center gap-1 rounded-md bg-secondary px-2 py-0.5 hover:bg-accent">
+                  <UserX className="h-3 w-3" /> None
                 </button>
               </div>
-            ) : (
-              <button
-                onClick={() => fileRef.current?.click()}
-                className="mt-1 flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-border bg-secondary/30 px-3 py-3 text-xs font-medium text-muted-foreground hover:bg-secondary"
-              >
-                <Camera className="h-4 w-4" /> Attach bill photo
-              </button>
-            )}
-            <p className="mt-1 text-[10px] text-muted-foreground">
-              Stored locally on this device & synced peer-to-peer. For backup, export the trip as JSON from the menu.
-            </p>
-          </div>
+              <div className="mt-2 max-h-52 md:max-h-64 space-y-1 overflow-y-auto rounded-xl border border-border p-2">
+                {group.members.map((m) => {
+                  const checked = participants.has(m.id);
+                  const owed =
+                    checked && amountNum > 0
+                      ? computeShareAmount(amountNum, mode, splits, m.id)
+                      : 0;
+                  return (
+                    <label
+                      key={m.id}
+                      className={cn(
+                        "flex items-center gap-2 rounded-lg px-2 py-1.5 cursor-pointer transition",
+                        checked ? "bg-primary/5" : "opacity-60 hover:opacity-100 hover:bg-secondary/50"
+                      )}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleP(m.id)}
+                        className="h-4 w-4 shrink-0 accent-[hsl(var(--primary))]"
+                      />
+                      <span className="min-w-0 flex-1 truncate text-sm">{m.name}</span>
+                      {checked && mode !== "equal" && (
+                        <Input
+                          inputMode="decimal"
+                          value={splitValues[m.id] ?? ""}
+                          onChange={(e) =>
+                            setSplitValues((sv) => ({ ...sv, [m.id]: e.target.value.replace(/[^\d.]/g, "") }))
+                          }
+                          placeholder={mode === "percent" ? "%" : mode === "exact" ? "amt" : "shares"}
+                          className="h-8 w-14 text-right text-sm"
+                        />
+                      )}
+                      <span className={cn("w-16 shrink-0 text-right text-xs tabular-nums", checked ? "text-foreground" : "text-muted-foreground line-through")}>
+                        {checked ? fmtMoney(owed, group.currency) : "excluded"}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+              {exactInvalid && (
+                <p className="mt-1 text-xs text-destructive">
+                  Sum {fmtMoney(sumExact, group.currency)} must equal {fmtMoney(amountNum, group.currency)}
+                </p>
+              )}
+              {percentInvalid && (
+                <p className="mt-1 text-xs text-destructive">Percentages must add to 100 (currently {sumPercent.toFixed(1)}%)</p>
+              )}
+            </div>
 
-          <div className="md:col-span-2">
-            <Label>Note (optional)</Label>
-            <Textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="Anything to remember…" />
+            {/* Mobile-only: bill + note (below split section) */}
+            <div className="md:hidden space-y-3">
+              <div>
+                <Label className="flex items-center gap-1.5"><ImageIcon className="h-3.5 w-3.5" /> Bill photo (optional)</Label>
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  hidden
+                  onChange={(e) => handleFile(e.target.files?.[0])}
+                />
+                {billImage ? (
+                  <div className="relative mt-1 overflow-hidden rounded-xl border border-border">
+                    <img src={billImage} alt="Bill" className="max-h-40 w-full object-contain bg-secondary" />
+                    <button
+                      onClick={() => setBillImage(undefined)}
+                      className="absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-full bg-background/90 text-destructive shadow-card hover:bg-destructive/10"
+                      aria-label="Remove bill photo"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => fileRef.current?.click()}
+                    className="mt-1 flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-border bg-secondary/30 px-3 py-2.5 text-xs font-medium text-muted-foreground hover:bg-secondary"
+                  >
+                    <Camera className="h-4 w-4" /> Attach bill photo
+                  </button>
+                )}
+                <p className="mt-1 text-[10px] text-muted-foreground">
+                  Stored locally & synced peer-to-peer.
+                </p>
+              </div>
+              <div>
+                <Label>Note (optional)</Label>
+                <Textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="Anything to remember…" />
+              </div>
+            </div>
           </div>
         </div>
 
-        <DialogFooter className="gap-2 sm:gap-2">
+        <DialogFooter className="shrink-0 border-t border-border px-4 py-3 sm:px-6 gap-2 sm:gap-2">
           <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button onClick={handleSave} disabled={!canSave}>{saveLabel ?? "Save"}</Button>
         </DialogFooter>

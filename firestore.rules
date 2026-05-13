@@ -29,9 +29,9 @@ service cloud.firestore {
     }
 
     function isPeerSignalingDoc() {
-      return request.resource.data.keys().hasOnly(['offer', 'answer'])
-        && ('offer' in request.resource.data && request.resource.data.offer is string)
-        && (!('answer' in request.resource.data) || request.resource.data.answer is string);
+      return request.resource.data.keys().hasOnly(['memberSdp', 'hostSdp'])
+        && ('memberSdp' in request.resource.data && request.resource.data.memberSdp is string)
+        && (!('hostSdp' in request.resource.data) || request.resource.data.hostSdp is string);
     }
   }
 }

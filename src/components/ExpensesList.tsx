@@ -62,7 +62,8 @@ export function ExpensesList({ group }: { group: Group }) {
 
   return (
     <>
-      <div className="mb-3 space-y-2">
+      {/* Sticky search/filter bar */}
+      <div className="sticky top-0 z-10 bg-background pb-2 space-y-2">
         <div className="relative">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search description, note, paid by…" className="pl-8 pr-8" />
@@ -96,6 +97,7 @@ export function ExpensesList({ group }: { group: Group }) {
               <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{fmtDay(d.ts)}</span>
               <span className="text-[11px] font-semibold tabular-nums text-muted-foreground">{fmtMoney(d.total, group.currency)}</span>
             </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             {d.items.map((e) => {
               const cat = getCategory(e.category);
               const Icon = cat.icon;
@@ -154,6 +156,7 @@ export function ExpensesList({ group }: { group: Group }) {
                 </div>
               );
             })}
+            </div>
           </div>
         ))}
       </div>

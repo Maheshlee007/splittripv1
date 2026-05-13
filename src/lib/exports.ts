@@ -56,38 +56,69 @@ export function exportExcel(g: Group): void {
 
 function buildPDF(g: Group): jsPDF {
   const doc = new jsPDF();
+  const active = g.members.filter((m) => m.status !== "pending");
+  const ledger = buildMemberLedger(g);
+  const rows = buildExpenseBreakdownRows(g);
+
+  // Header
   doc.setFontSize(18);
   doc.text(`${g.emoji} ${g.name}`, 14, 18);
   doc.setFontSize(10);
   doc.setTextColor(120);
-  doc.text(`Code ${g.id} · ${g.members.length} members · ${fmtMoney(totalSpent(g), g.currency)} spent`, 14, 25);
+  doc.text(`Code ${g.id} · ${active.length} members · ${fmtMoney(totalSpent(g), g.currency)} spent · Generated ${new Date().toLocaleDateString()}`, 14, 25);
   doc.setTextColor(0);
 
+  // Trip breakdown table (same as DashboardView)
+  if (rows.length > 0) {
+    doc.setFontSize(12);
+    doc.text("Trip Breakdown", 14, 34);
+    autoTable(doc, {
+      startY: 38,
+      head: [["Date", "Category / Description", `Total (${g.currency})`, ...active.map((m) => m.name)]],
+      body: [
+        ...rows.map((r) => [
+          fmtDate(r.date),
+          `${getCategory(r.category).label} - ${r.description}`,
+          fmtMoney(r.total, g.currency),
+          ...active.map((m) => {
+            const v = r.shares[m.id];
+            return v ? fmtMoney(v, g.currency) : "-";
+          }),
+        ]),
+        // Summary rows
+        ["", "Share per person", fmtMoney(totalSpent(g), g.currency), ...active.map((m) => fmtMoney(ledger.find((r) => r.memberId === m.id)?.owed ?? 0, g.currency))],
+        ["", "Individual spent", "", ...active.map((m) => fmtMoney(ledger.find((r) => r.memberId === m.id)?.paid ?? 0, g.currency))],
+        ["", "Balance", "", ...active.map((m) => {
+          const bal = ledger.find((r) => r.memberId === m.id)?.finalBalance ?? 0;
+          return `${bal > 0 ? "+" : ""}${fmtMoney(bal, g.currency)}`;
+        })],
+      ],
+      styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [249, 115, 22], fontSize: 7 },
+      columnStyles: { 0: { cellWidth: 22 }, 1: { cellWidth: 40 } },
+    });
+  }
+
+  // Balances summary
+  const lastY = (doc as any).lastAutoTable?.finalY ?? 60;
+  doc.setFontSize(12);
+  doc.text("Member Balances", 14, lastY + 10);
+
   autoTable(doc, {
-    startY: 32,
-    head: [["Date", "Description", "Paid by", "Amount", "Category"]],
-    body: g.expenses.map((e) => [
-      fmtDate(e.createdAt),
-      e.description,
-      memberName(g, e.paidBy),
-      fmtMoney(e.amount, g.currency),
-      getCategory(e.category).label,
+    startY: lastY + 14,
+    head: [["Member", "Spent", "Share", "Settled", "Final Balance"]],
+    body: ledger.map((r) => [
+      r.name,
+      fmtMoney(r.paid, g.currency),
+      fmtMoney(r.owed, g.currency),
+      r.settled !== 0 ? fmtMoney(r.settled, g.currency) : "-",
+      `${r.finalBalance > 0 ? "+" : r.finalBalance < 0 ? "-" : ""}${fmtMoney(Math.abs(r.finalBalance), g.currency)}`,
     ]),
-    styles: { fontSize: 9 },
-    headStyles: { fillColor: [249, 115, 22] },
-  });
-
-  const ledger = buildMemberLedger(g);
-  const lastY = (doc as any).lastAutoTable.finalY ?? 60;
-
-  autoTable(doc, {
-    startY: lastY + 8,
-    head: [["Member", "Spent", "Share", "Balance"]],
-    body: ledger.map((r) => [r.name, fmtMoney(r.paid, g.currency), fmtMoney(r.owed, g.currency), `${r.finalBalance > 0 ? "+" : r.finalBalance < 0 ? "-" : ""}${fmtMoney(Math.abs(r.finalBalance), g.currency)}`]),
     styles: { fontSize: 9 },
     headStyles: { fillColor: [34, 197, 94] },
   });
 
+  // Settlements needed
   const owner = g.members.find((m) => m.id === g.ownerId) ?? g.members[0];
   const settleRows = ledger.filter((r) => r.memberId !== owner?.id && Math.abs(r.finalBalance) > 0.01);
   if (settleRows.length) {
