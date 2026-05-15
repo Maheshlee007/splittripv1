@@ -10,6 +10,7 @@ import TripsPage from "@/pages/TripsPage";
 import GroupPage from "@/pages/GroupPage";
 import TripPickerPage from "@/pages/TripPickerPage";
 import MePage from "@/pages/MePage";
+import MonthDetailPage from "@/pages/MonthDetailPage";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -30,6 +31,7 @@ const App = () => (
                 <Route path="/balances" element={<TripPickerPage title="Balances" subtitle="Across your trips" target="balances" />} />
                 <Route path="/requests" element={<TripPickerPage title="Requests" subtitle="Across your trips" target="requests" />} />
                 <Route path="/me" element={<MePage />} />
+                <Route path="/me/month/:year/:month" element={<MonthDetailPage />} />
               </Route>
               <Route path="*" element={<NotFound />} />
             </Routes>

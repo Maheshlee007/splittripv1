@@ -102,9 +102,9 @@ function buildPDF(g: Group): jsPDF {
           return `${bal > 0 ? "+" : ""}${fmtMoney(bal, g.currency)}`;
         })],
       ],
-      styles: { fontSize: 8, cellPadding: 2 },
-      headStyles: { fillColor: [249, 115, 22], fontSize: 7 },
-      columnStyles: { 0: { cellWidth: 22 }, 1: { cellWidth: 40 } },
+      styles: { fontSize: useLandscape ? 7 : 8, cellPadding: 2 },
+      headStyles: { fillColor: [249, 115, 22], fontSize: useLandscape ? 6 : 7 },
+      columnStyles: { 0: { cellWidth: useLandscape ? 20 : 22 }, 1: { cellWidth: useLandscape ? 34 : 40 } },
     });
   }
 

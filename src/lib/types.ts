@@ -105,4 +105,31 @@ export interface Profile {
   name: string;
   phone?: string;
   upiId?: string;
+  defaultCurrency?: string;
+}
+
+/* ---------- Personal Expense Tracker ---------- */
+
+export type PaymentMethod = "upi" | "credit" | "debit" | "cash" | "wallet";
+
+export interface PersonalExpense {
+  id: string;
+  description: string;
+  amount: number;
+  currency: string;
+  category: string;
+  paymentMethod: PaymentMethod;
+  date: number;            // epoch ms — actual expense date
+  monthKey: string;        // "2026-05" — derived from date, stored for indexing
+  note?: string;
+  billImage?: string;      // dataURL, max 500KB compressed
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface PersonalBudget {
+  monthKey: string;        // "2026-05"
+  category?: string;       // undefined = overall budget for month
+  amount: number;
+  currency: string;
 }

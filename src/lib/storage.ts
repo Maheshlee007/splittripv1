@@ -1,9 +1,23 @@
 import { openDB, DBSchema, IDBPDatabase } from "idb";
-import { Group, Profile } from "./types";
+import { Group, Profile, PersonalExpense, PersonalBudget } from "./types";
 
 interface SplitTripDB extends DBSchema {
   groups: { key: string; value: Group };
   meta: { key: string; value: unknown };
+  personal_expenses: {
+    key: string;
+    value: PersonalExpense;
+    indexes: {
+      "by_month": string;
+      "by_category": string;
+      "by_month_category": [string, string];
+    };
+  };
+  personal_budgets: {
+    key: string;
+    value: PersonalBudget;
+    indexes: { "by_month": string };
+  };
 }
 
 export type ThemePref = "light" | "dark" | "system";
@@ -13,10 +27,24 @@ let idbAvailable = true;
 
 function db() {
   if (!dbPromise) {
-    dbPromise = openDB<SplitTripDB>("splittrip", 1, {
-      upgrade(db) {
-        if (!db.objectStoreNames.contains("groups")) db.createObjectStore("groups", { keyPath: "id" });
-        if (!db.objectStoreNames.contains("meta")) db.createObjectStore("meta");
+    dbPromise = openDB<SplitTripDB>("splittrip", 2, {
+      upgrade(db, oldVersion) {
+        if (oldVersion < 1) {
+          db.createObjectStore("groups", { keyPath: "id" });
+          db.createObjectStore("meta");
+        }
+        if (oldVersion < 2) {
+          const peStore = db.createObjectStore("personal_expenses", { keyPath: "id" });
+          peStore.createIndex("by_month", "monthKey");
+          peStore.createIndex("by_category", "category");
+          peStore.createIndex("by_month_category", ["monthKey", "category"]);
+
+          const pbStore = db.createObjectStore("personal_budgets", { keyPath: "monthKey" });
+          pbStore.createIndex("by_month", "monthKey");
+        }
+      },
+      blocked() {
+        console.warn("[SplitTrip] DB upgrade blocked — close other tabs");
       },
     }).catch((err) => {
       idbAvailable = false;
@@ -88,3 +116,33 @@ export async function saveTheme(t: ThemePref): Promise<void> {
 }
 
 export function isIdbAvailable() { return idbAvailable; }
+
+/* ---------- Personal Expenses ---------- */
+
+export async function loadPersonalExpensesByMonth(monthKey: string): Promise<PersonalExpense[]> {
+  try {
+    return await (await db()).getAllFromIndex("personal_expenses", "by_month", monthKey);
+  } catch { return []; }
+}
+
+export async function loadAllPersonalExpenses(): Promise<PersonalExpense[]> {
+  try {
+    return await (await db()).getAll("personal_expenses");
+  } catch { return []; }
+}
+
+export async function savePersonalExpense(e: PersonalExpense): Promise<void> {
+  try { await (await db()).put("personal_expenses", e); } catch {}
+}
+
+export async function deletePersonalExpense(id: string): Promise<void> {
+  try { await (await db()).delete("personal_expenses", id); } catch {}
+}
+
+export async function loadPersonalBudgets(): Promise<PersonalBudget[]> {
+  try { return await (await db()).getAll("personal_budgets"); } catch { return []; }
+}
+
+export async function savePersonalBudget(b: PersonalBudget): Promise<void> {
+  try { await (await db()).put("personal_budgets", b); } catch {}
+}

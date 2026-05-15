@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Outlet, NavLink, useLocation } from "react-router-dom";
-import { Home, Receipt, Inbox, Scale, User, Wifi, WifiOff, Sun, Moon, Monitor, ChevronLeft, ChevronRight, Radio, Download, X } from "lucide-react";
+import { Home, Receipt, Inbox, Scale, User, Wifi, WifiOff, Sun, Moon, Monitor, ChevronLeft, ChevronRight, Radio, Smartphone, ExternalLink, X } from "lucide-react";
 import { useApp } from "@/store/AppStore";
 import { onSyncStatus, type SyncStatus } from "@/lib/sync";
 import { cn } from "@/lib/utils";
@@ -43,15 +43,16 @@ export default function AppShell() {
   const { canInstall, isInstalled, promptInstall } = usePWAInstall();
   const [installDismissed, setInstallDismissed] = useState(() => sessionStorage.getItem("splittrip:pwa-dismissed") === "1");
   const isDesktop = typeof window !== "undefined" && !("ontouchstart" in window);
-  const showInstallBanner = canInstall && !installDismissed && !isDesktop;
+  const isStandalone = typeof window !== "undefined" && (window.matchMedia("(display-mode: standalone)").matches || (navigator as any).standalone);
+  const showInstallBanner = canInstall && !installDismissed && !isDesktop && !isStandalone;
   const [showInstallModal, setShowInstallModal] = useState(false);
 
   // Desktop: show modal on first visit if installable
   useEffect(() => {
-    if (canInstall && isDesktop && !installDismissed) {
+    if (canInstall && isDesktop && !installDismissed && !isStandalone) {
       setShowInstallModal(true);
     }
-  }, [canInstall, isDesktop, installDismissed]);
+  }, [canInstall, isDesktop, installDismissed, isStandalone]);
 
   useEffect(() => {
     localStorage.setItem("splittrip:nav-collapsed", collapsed ? "1" : "0");
@@ -96,9 +97,9 @@ export default function AppShell() {
           <StatusPill />
         </div>
         <div className="flex items-center gap-1">
-          {canInstall && (
+          {!isStandalone && canInstall && (
             <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full" onClick={promptInstall} aria-label="Install app">
-              <Download className="h-[18px] w-[18px]" />
+              <Smartphone className="h-[18px] w-[18px]" />
             </Button>
           )}
           <ThemeToggle compact />
@@ -154,11 +155,11 @@ export default function AppShell() {
 
         {/* Bottom controls: theme + install + collapse */}
         <div className={cn("mt-auto flex items-center gap-1 border-t border-border p-2", collapsed ? "flex-col" : "justify-between px-3")}>
-          <div className="flex items-center gap-1">
+          <div className="flex flex-col items-center gap-1">
             <ThemeToggle compact={collapsed} />
-            {canInstall && (
-              <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full" onClick={promptInstall} aria-label="Install app">
-                <Download className="h-[18px] w-[18px]" />
+            {!isStandalone && canInstall && (
+              <Button variant="ghost" size="icon"  className={cn("rounded-full hover:bg-secondary ", !collapsed ? "h-9 w-9 ml-8" : "h-9 gap-2 px-3")} onClick={promptInstall} aria-label="Install app">
+                <Smartphone className="h-[18px] w-[18px]" /> {!collapsed && "Install APP"}
               </Button>
             )}
           </div>
@@ -176,10 +177,10 @@ export default function AppShell() {
 
       {showInstallBanner && (
         <div className="mx-auto flex w-full max-w-screen-xl items-center gap-3 border-b border-border bg-primary/5 px-4 py-2 md:px-6">
-          <Download className="h-4 w-4 shrink-0 text-primary" />
+          <Smartphone className="h-4 w-4 shrink-0 text-primary" />
           <p className="flex-1 text-xs">Install SplitTrip for offline use and a native app experience.</p>
           <Button size="sm" variant="default" className="h-7 gap-1 text-xs" onClick={promptInstall}>
-            <Download className="h-3.5 w-3.5" /> Install
+            <Smartphone className="h-3.5 w-3.5" /> Install
           </Button>
           <button
             className="grid h-6 w-6 place-items-center rounded-full hover:bg-secondary"
@@ -241,14 +242,14 @@ export default function AppShell() {
             Get a native app experience with offline support, faster loading, and no browser chrome.
           </p>
           {isInstalled ? (
-            <p className="text-sm font-medium text-success">App installed! You can open it from your desktop now.</p>
+            <p className="text-sm font-medium text-success">App installed! You can open it from your home screen now.</p>
           ) : (
             <div className="flex flex-col gap-2 pt-2">
               <Button className="w-full gap-2" onClick={async () => {
                 const ok = await promptInstall();
                 if (ok) setTimeout(() => setShowInstallModal(false), 1500);
               }}>
-                <Download className="h-4 w-4" /> Install App
+                <Smartphone className="h-4 w-4" /> Install App
               </Button>
               <Button variant="ghost" className="w-full" onClick={() => {
                 setShowInstallModal(false);

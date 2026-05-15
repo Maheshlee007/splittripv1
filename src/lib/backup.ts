@@ -1,17 +1,18 @@
-import { Group, Profile } from "./types";
-import { loadGroups, loadProfile, saveGroup, saveProfile } from "./storage";
+import { Group, Profile, PersonalExpense } from "./types";
+import { loadGroups, loadProfile, saveGroup, saveProfile, loadAllPersonalExpenses, savePersonalExpense } from "./storage";
 
 export interface FullBackup {
   app: "splittrip";
-  version: 1;
+  version: 1 | 2;
   exportedAt: number;
   profile: Profile | null;
   groups: Group[];
+  personalExpenses?: PersonalExpense[];
 }
 
 export async function buildBackup(): Promise<FullBackup> {
-  const [profile, groups] = await Promise.all([loadProfile(), loadGroups()]);
-  return { app: "splittrip", version: 1, exportedAt: Date.now(), profile, groups };
+  const [profile, groups, personalExpenses] = await Promise.all([loadProfile(), loadGroups(), loadAllPersonalExpenses()]);
+  return { app: "splittrip", version: 2, exportedAt: Date.now(), profile, groups, personalExpenses };
 }
 
 export async function downloadBackup(): Promise<void> {
@@ -37,5 +38,8 @@ export async function restoreBackup(file: File): Promise<{ groups: number }> {
   const data = parsed.data as unknown as FullBackup;
   if (data.profile) await saveProfile(data.profile);
   for (const g of data.groups) await saveGroup(g);
+  if (data.personalExpenses) {
+    for (const e of data.personalExpenses) await savePersonalExpense(e);
+  }
   return { groups: data.groups.length };
 }

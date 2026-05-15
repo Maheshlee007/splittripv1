@@ -4,16 +4,26 @@ import { PageHeader } from "@/components/PageHeader";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Sun, Moon, Monitor, Pencil, User, Phone, AtSign, CheckCircle2, Download, Upload, ShieldAlert } from "lucide-react";
+import { Sun, Moon, Monitor, Pencil, User, Phone, AtSign, CheckCircle2, Download, Upload, ShieldAlert, Wallet } from "lucide-react";
 import { downloadBackup, restoreBackup } from "@/lib/backup";
 import { toast } from "sonner";
+import { PersonalStoreProvider } from "@/store/PersonalStore";
+import { PersonalYearGrid } from "@/components/PersonalYearGrid";
+import { cn } from "@/lib/utils";
+
+type MeTab = "profile" | "tracker";
 
 export default function MePage() {
   const { profile, setProfileFields, themePref, setThemePref } = useApp();
+  const [tab, setTab] = useState<MeTab>(() => (localStorage.getItem("splittrip:me-tab") as MeTab) || "profile");
   const [editing, setEditing] = useState(!profile.name);
   const [name, setName] = useState(profile.name);
   const [phone, setPhone] = useState(profile.phone ?? "");
   const [upi, setUpi] = useState(profile.upiId ?? "");
+
+  useEffect(() => {
+    localStorage.setItem("splittrip:me-tab", tab);
+  }, [tab]);
 
   useEffect(() => {
     setName(profile.name);
@@ -30,8 +40,40 @@ export default function MePage() {
 
   return (
     <>
-      <PageHeader title="Me" subtitle="Your profile & preferences" />
-      <div className="mx-auto max-w-xl space-y-6 px-4 py-4">
+      <PageHeader title="Me" subtitle={tab === "profile" ? "Your profile & preferences" : "Personal expense tracker"} />
+
+      {/* Tab switcher */}
+      <div className="mx-auto max-w-xl px-4 pt-2">
+        <div className="flex rounded-lg bg-secondary p-0.5">
+          <button
+            onClick={() => setTab("profile")}
+            className={cn(
+              "flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium transition",
+              tab === "profile" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"
+            )}
+          >
+            <User className="h-4 w-4" /> Profile
+          </button>
+          <button
+            onClick={() => setTab("tracker")}
+            className={cn(
+              "flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium transition",
+              tab === "tracker" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"
+            )}
+          >
+            <Wallet className="h-4 w-4" /> Personal
+          </button>
+        </div>
+      </div>
+
+      {tab === "tracker" ? (
+        <div className="mx-auto max-w-xl px-4 py-4">
+          <PersonalStoreProvider>
+            <PersonalYearGrid />
+          </PersonalStoreProvider>
+        </div>
+      ) : (
+        <div className="mx-auto max-w-xl space-y-6 px-4 py-4">
         <section className="space-y-3 rounded-2xl border border-border bg-card p-5 shadow-card">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold">Profile</h3>
@@ -127,7 +169,8 @@ export default function MePage() {
             Tip: install this app to your home screen for the best experience.
           </p>
         </section>
-      </div>
+        </div>
+      )}
     </>
   );
 }
@@ -169,7 +212,7 @@ function BackupSection() {
         </Button>
       </div>
       <p className="text-[10px] text-muted-foreground">
-        Backup includes your profile + every trip (members, expenses, requests, settlements, bill photos).
+        Backup includes your profile + every trip (members, expenses, requests, settlements, bill photos) + personal expenses.
       </p>
     </section>
   );
