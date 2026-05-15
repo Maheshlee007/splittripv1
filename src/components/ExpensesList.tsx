@@ -135,7 +135,7 @@ export function ExpensesList({ group }: { group: Group }) {
                           </button>
                         )}
                         {canEdit && (
-                          <button onClick={() => setEditing(e)} className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground">
+                          <button onClick={() => setEditing(e)} className="flex items-center gap-1 rounded-md bg-secondary px-2 py-1 text-[11px] font-medium text-muted-foreground hover:bg-accent hover:text-foreground">
                             <Pencil className="h-3 w-3" /> Edit
                           </button>
                         )}

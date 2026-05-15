@@ -95,7 +95,14 @@ export default function AppShell() {
           <div className="text-sm font-semibold">SplitTrip</div>
           <StatusPill />
         </div>
-        <ThemeToggle compact />
+        <div className="flex items-center gap-1">
+          {canInstall && (
+            <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full" onClick={promptInstall} aria-label="Install app">
+              <Download className="h-[18px] w-[18px]" />
+            </Button>
+          )}
+          <ThemeToggle compact />
+        </div>
       </div>
 
       {/* Desktop sidebar */}
@@ -145,9 +152,16 @@ export default function AppShell() {
           ))}
         </nav>
 
-        {/* Bottom controls: theme + collapse */}
+        {/* Bottom controls: theme + install + collapse */}
         <div className={cn("mt-auto flex items-center gap-1 border-t border-border p-2", collapsed ? "flex-col" : "justify-between px-3")}>
-          <ThemeToggle compact={collapsed} />
+          <div className="flex items-center gap-1">
+            <ThemeToggle compact={collapsed} />
+            {canInstall && (
+              <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full" onClick={promptInstall} aria-label="Install app">
+                <Download className="h-[18px] w-[18px]" />
+              </Button>
+            )}
+          </div>
           <Button
             variant="ghost"
             size="icon"

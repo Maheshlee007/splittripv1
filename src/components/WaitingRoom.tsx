@@ -44,11 +44,11 @@ export function WaitingRoom({ status, tripId, code, onContinueOffline, hasLocalD
         Waiting for the Host to become online. Real-time synchronization requires a direct peer-to-peer link.
       </p>
       <p className="mb-8 max-w-sm text-xs text-muted-foreground">
-        {status === "signaling" 
+        {status === "syncing" 
           ? "Your offer has been sent. The host will respond when they open this trip."
           : status === "failed"
           ? "Could not reach the host. Try the manual QR fallback or continue offline with local data."
-          : "Connecting..."}
+          : "Waiting for sync to begin..."}
       </p>
 
       <div className="flex w-full max-w-sm flex-col gap-3">

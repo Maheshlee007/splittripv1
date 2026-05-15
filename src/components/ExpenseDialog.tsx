@@ -166,13 +166,13 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex flex-col w-[calc(100vw-1rem)] max-w-4xl max-h-[92vh] overflow-hidden p-0">
+      <DialogContent className="flex flex-col w-full max-w-[calc(100vw-1rem)] sm:max-w-4xl max-h-[92vh] overflow-hidden p-0">
         <DialogHeader className="shrink-0 border-b border-border px-4 py-3 sm:px-6">
           <DialogTitle>{title ?? "Add expense"}</DialogTitle>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-6">
-          <div className="grid gap-4 md:grid-cols-[1fr,1fr]">
+        <div className="flex-1 overflow-y-auto px-3 py-4 sm:px-6">
+          <div className="grid gap-4 grid-cols-1 md:grid-cols-[1fr,1fr]">
             {/* LEFT COLUMN — expense details */}
             <div className="space-y-3">
               <div>
@@ -180,7 +180,7 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
                 <Input value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Dinner at beach shack" autoFocus />
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 xs:grid-cols-2 gap-2">
                 <div>
                   <Label>Amount ({group.currency})</Label>
                   <Input
@@ -204,7 +204,7 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
                 </div>
               </div>
 
-              <div className="grid grid-cols-[1fr,auto] gap-2 items-end">
+              <div className="grid grid-cols-1 sm:grid-cols-[1fr,auto] gap-2 items-end">
                 <div>
                   <Label>Category</Label>
                   <div className="mt-1 flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">

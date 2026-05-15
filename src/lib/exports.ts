@@ -54,9 +54,18 @@ export function exportExcel(g: Group): void {
   XLSX.writeFile(wb, `${g.name.replace(/[^\w]+/g, "_")}_${g.id}.xlsx`);
 }
 
+function abbreviateName(name: string, maxLen = 10): string {
+  if (name.length <= maxLen) return name;
+  const parts = name.trim().split(/\s+/);
+  if (parts.length > 1) return `${parts[0]} ${parts[parts.length - 1][0]}.`;
+  return name.slice(0, maxLen - 1) + "…";
+}
+
 function buildPDF(g: Group): jsPDF {
-  const doc = new jsPDF();
   const active = g.members.filter((m) => m.status !== "pending");
+  const useLandscape = active.length > 5;
+  const doc = new jsPDF({ orientation: useLandscape ? "landscape" : "portrait" });
+  const nameMaxLen = useLandscape ? 8 : 14;
   const ledger = buildMemberLedger(g);
   const rows = buildExpenseBreakdownRows(g);
 
@@ -74,7 +83,7 @@ function buildPDF(g: Group): jsPDF {
     doc.text("Trip Breakdown", 14, 34);
     autoTable(doc, {
       startY: 38,
-      head: [["Date", "Category / Description", `Total (${g.currency})`, ...active.map((m) => m.name)]],
+      head: [["Date", "Category / Description", `Total (${g.currency})`, ...active.map((m) => abbreviateName(m.name, nameMaxLen))]],
       body: [
         ...rows.map((r) => [
           fmtDate(r.date),

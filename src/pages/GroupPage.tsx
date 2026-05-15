@@ -67,7 +67,7 @@ export default function GroupPage() {
   const initialTab = params.get("tab") || "expenses";
   const isHost = role === "owner";
 
-  const { status, onlineMembers, broadcastGroup, broadcastKick, broadcastEndTrip, disconnectAndLeave, reconnect } = useWebRTCSync(
+  const { status, onlineMembers, lastSyncedAt, isSyncing, broadcastGroup, broadcastKick, broadcastEndTrip, disconnectAndLeave, reconnect, startSync } = useWebRTCSync(
     group.id,
     group.inviteToken,
     isHost,
@@ -125,8 +125,8 @@ export default function GroupPage() {
           <span className="flex items-center gap-1">
             {live ? <Wifi className="h-3 w-3 text-success" /> : <WifiOff className="h-3 w-3" />}
             {live ? `${peerCount} peer${peerCount === 1 ? "" : "s"}` : "offline"}
-            {status === "signaling" && wasApproved && (
-              <span className="text-[10px] text-warning animate-pulse ml-1">reconnecting…</span>
+            {isSyncing && (
+              <span className="text-[10px] text-warning animate-pulse ml-1">syncing…</span>
             )}
             <span>·</span>
             <code className="font-mono">{group.id}</code>
@@ -134,9 +134,9 @@ export default function GroupPage() {
         }
         actions={
           <div className="flex items-center gap-1">
-            {status !== "connected" && !group.syncDisabled && (
-              <Button size="sm" variant="ghost" onClick={reconnect} title="Reconnect">
-                <RefreshCw className="h-4 w-4" />
+            {!group.syncDisabled && (
+              <Button size="sm" variant="ghost" onClick={startSync} title={isHost ? "Sync All" : "Sync Data"} disabled={isSyncing}>
+                <RefreshCw className={`h-4 w-4 ${isSyncing ? "animate-spin" : ""}`} />
               </Button>
             )}
             <Button size="sm" variant="ghost" onClick={() => setShareOpen(true)}>
@@ -236,6 +236,25 @@ export default function GroupPage() {
       />
 
       <div className="mx-auto w-full max-w-screen-xl px-4 pt-4 pb-32 md:pb-16">
+        {/* Sync status banner */}
+        {status !== "connected" && !group.syncDisabled && !group.archived && (
+          <div className="mb-3 rounded-xl border border-warning/30 bg-warning/5 p-3 text-xs text-warning flex items-center justify-between gap-2">
+            <span>
+              {isHost
+                ? "📡 Offline — Ask members to be active, then click Sync to connect."
+                : "📡 Offline — Ask the trip owner to be active and click Sync."}
+              {lastSyncedAt && (
+                <span className="ml-1 text-muted-foreground">
+                  Last synced: {new Date(lastSyncedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                </span>
+              )}
+            </span>
+            <Button size="sm" variant="outline" className="h-6 text-[10px] shrink-0" onClick={startSync} disabled={isSyncing}>
+              <RefreshCw className={`h-3 w-3 mr-1 ${isSyncing ? "animate-spin" : ""}`} />
+              {isSyncing ? "Syncing…" : "Sync"}
+            </Button>
+          </div>
+        )}
         {selfPending && (
           <div className="mb-3 rounded-xl border border-warning/30 bg-warning/5 p-3 text-xs text-warning">
             ⏳ Waiting for the trip owner to approve your join request. You'll see live updates once approved.
