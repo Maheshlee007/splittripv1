@@ -6,25 +6,23 @@ service cloud.firestore {
     // Documents auto-expire via Firebase TTL Extension (ttl field set to 14 days from creation).
 
     match /trips/{tripId} {
-      // Only allow get (single doc by ID), NOT list (prevents querying entire collection)
+      // Changed 'read' to 'get' to explicitly block 'list' queries
       allow get: if isValidTripId(tripId);
-      allow list: if false;
-      allow create: if isValidTripId(tripId) && isSignalingDocument();
-      allow update: if isValidTripId(tripId) && isSignalingDocument();
-      // Allow delete only for valid trip IDs (owner validation is client-side since no auth)
+      allow list: if false;       // STOPS DDOS/SCRAPING: No one can list all trips
+      allow create, update: if isValidTripId(tripId) && isSignalingDocument();
       allow delete: if isValidTripId(tripId);
 
       // Subcollection: each peer writes their own signaling doc
       match /peers/{peerId} {
+        // Changed 'read' to 'get' here as well
         allow get: if isValidTripId(tripId);
-        // Allow list within a specific trip's peers (needed for cleanup)
-        allow list: if isValidTripId(tripId);
+        allow list: if false;       // STOPS DDOS/SCRAPING: No one can list all trips
         allow create, update: if isValidTripId(tripId) && isPeerSignalingDoc();
         allow delete: if isValidTripId(tripId);
       }
     }
 
-    // Catch-all deny for everything else
+    // This correctly blocks everything else
     match /{document=**} {
       allow read, write: if false;
     }
