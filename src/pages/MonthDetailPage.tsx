@@ -1,5 +1,4 @@
 import { useParams, useNavigate } from "react-router-dom";
-import { PersonalStoreProvider } from "@/store/PersonalStore";
 import { PersonalMonthView } from "@/components/PersonalMonthView";
 import { PageHeader } from "@/components/PageHeader";
 import { monthKeyFullLabel } from "@/lib/personal-utils";
@@ -16,15 +15,13 @@ export default function MonthDetailPage() {
   return (
     <>
       <div className="flex items-center gap-2 px-4 pt-4">
-        <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" onClick={() => navigate("/me")}>
+        <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" onClick={() => navigate("/personal/expenses")}>
           <ChevronLeft className="h-4 w-4" />
         </Button>
         <PageHeader title={monthKeyFullLabel(monthKey)} subtitle="Personal expenses" />
       </div>
       <div className="mx-auto max-w-xl px-4 py-4">
-        <PersonalStoreProvider>
-          <PersonalMonthView monthKey={monthKey} />
-        </PersonalStoreProvider>
+        <PersonalMonthView monthKey={monthKey} />
       </div>
     </>
   );

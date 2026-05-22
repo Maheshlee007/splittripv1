@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { db } from "@/lib/firebase";
-import { doc, setDoc, onSnapshot, deleteDoc, collection, getDocs, getDoc } from "firebase/firestore";
+import { doc, setDoc, onSnapshot, deleteDoc, collection, getDocs, getDoc, Timestamp } from "firebase/firestore";
 import CryptoJS from "crypto-js";
 import { Group } from "@/lib/types";
 import { safeParseGroup } from "@/lib/schema";
@@ -245,7 +245,8 @@ export function useWebRTCSync(
     let connected = false;
 
     try {
-      await setDoc(tripRef, { ownerId: memberId }, { merge: true });
+      const ttl = Timestamp.fromDate(new Date(Date.now() + 14 * 24 * 60 * 60 * 1000));
+      await setDoc(tripRef, { ownerId: memberId, ttl }, { merge: true });
     } catch (err) {
       console.error("[WebRTC] Failed to write trip doc:", err);
       toast.error("Signaling failed — check your connection");

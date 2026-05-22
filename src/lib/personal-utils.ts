@@ -1,16 +1,30 @@
-import { Smartphone, CreditCard, Wallet, Banknote, WalletCards } from "lucide-react";
-import type { PaymentMethod } from "./types";
+import { Smartphone, CreditCard, Wallet, Banknote, WalletCards, CircleDollarSign } from "lucide-react";
+import type { CustomPaymentMethod } from "./types";
 
-export const PAYMENT_METHODS: { id: PaymentMethod; label: string; icon: typeof Smartphone }[] = [
+export const ICON_MAP: Record<string, typeof Smartphone> = {
+  "smartphone": Smartphone,
+  "credit-card": CreditCard,
+  "wallet": Wallet,
+  "banknote": Banknote,
+  "wallet-cards": WalletCards,
+  "default": CircleDollarSign,
+};
+
+export const DEFAULT_PAYMENT_METHODS: { id: string; label: string; icon: typeof Smartphone }[] = [
   { id: "upi", label: "UPI", icon: Smartphone },
-  { id: "credit", label: "Credit", icon: CreditCard },
-  { id: "debit", label: "Debit", icon: Wallet },
+  { id: "credit", label: "Credit Card", icon: CreditCard },
+  { id: "debit", label: "Debit Card", icon: Wallet },
   { id: "cash", label: "Cash", icon: Banknote },
   { id: "wallet", label: "Wallet", icon: WalletCards },
 ];
 
-export function getPaymentMethod(id: PaymentMethod) {
-  return PAYMENT_METHODS.find((m) => m.id === id) ?? PAYMENT_METHODS[0];
+export function getPaymentMethodIcon(pm: CustomPaymentMethod) {
+  return ICON_MAP[pm.icon ?? "default"] ?? CircleDollarSign;
+}
+
+export function getPaymentMethod(id: string) {
+  const found = DEFAULT_PAYMENT_METHODS.find((m) => m.id === id);
+  return found ?? { id, label: id, icon: CircleDollarSign };
 }
 
 export function deriveMonthKey(date: number): string {

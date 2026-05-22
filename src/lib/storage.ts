@@ -1,5 +1,5 @@
 import { openDB, DBSchema, IDBPDatabase } from "idb";
-import { Group, Profile, PersonalExpense, PersonalBudget } from "./types";
+import { Group, Profile, PersonalExpense, PersonalBudget, CustomPaymentMethod, Lending } from "./types";
 
 interface SplitTripDB extends DBSchema {
   groups: { key: string; value: Group };
@@ -18,6 +18,18 @@ interface SplitTripDB extends DBSchema {
     value: PersonalBudget;
     indexes: { "by_month": string };
   };
+  personal_payment_methods: {
+    key: string;
+    value: CustomPaymentMethod;
+  };
+  lendings: {
+    key: string;
+    value: Lending;
+    indexes: {
+      "by_status": string;
+      "by_person": string;
+    };
+  };
 }
 
 export type ThemePref = "light" | "dark" | "system";
@@ -25,9 +37,17 @@ export type ThemePref = "light" | "dark" | "system";
 let dbPromise: Promise<IDBPDatabase<SplitTripDB>> | null = null;
 let idbAvailable = true;
 
+const DEFAULT_PAYMENT_METHODS: CustomPaymentMethod[] = [
+  { id: "upi", label: "UPI", icon: "smartphone", isDefault: true },
+  { id: "credit", label: "Credit Card", icon: "credit-card", isDefault: true },
+  { id: "debit", label: "Debit Card", icon: "wallet", isDefault: true },
+  { id: "cash", label: "Cash", icon: "banknote", isDefault: true },
+  { id: "wallet", label: "Wallet", icon: "wallet-cards", isDefault: true },
+];
+
 function db() {
   if (!dbPromise) {
-    dbPromise = openDB<SplitTripDB>("splittrip", 2, {
+    dbPromise = openDB<SplitTripDB>("splittrip", 3, {
       upgrade(db, oldVersion) {
         if (oldVersion < 1) {
           db.createObjectStore("groups", { keyPath: "id" });
@@ -41,6 +61,14 @@ function db() {
 
           const pbStore = db.createObjectStore("personal_budgets", { keyPath: "monthKey" });
           pbStore.createIndex("by_month", "monthKey");
+        }
+        if (oldVersion < 3) {
+          const pmStore = db.createObjectStore("personal_payment_methods", { keyPath: "id" });
+          for (const pm of DEFAULT_PAYMENT_METHODS) pmStore.add(pm);
+
+          const lStore = db.createObjectStore("lendings", { keyPath: "id" });
+          lStore.createIndex("by_status", "status");
+          lStore.createIndex("by_person", "personName");
         }
       },
       blocked() {
@@ -145,4 +173,35 @@ export async function loadPersonalBudgets(): Promise<PersonalBudget[]> {
 
 export async function savePersonalBudget(b: PersonalBudget): Promise<void> {
   try { await (await db()).put("personal_budgets", b); } catch {}
+}
+
+/* ---------- Payment Methods ---------- */
+
+export async function loadPaymentMethods(): Promise<CustomPaymentMethod[]> {
+  try {
+    const items = await (await db()).getAll("personal_payment_methods");
+    return items.length > 0 ? items : DEFAULT_PAYMENT_METHODS;
+  } catch { return DEFAULT_PAYMENT_METHODS; }
+}
+
+export async function savePaymentMethod(pm: CustomPaymentMethod): Promise<void> {
+  try { await (await db()).put("personal_payment_methods", pm); } catch {}
+}
+
+export async function deletePaymentMethod(id: string): Promise<void> {
+  try { await (await db()).delete("personal_payment_methods", id); } catch {}
+}
+
+/* ---------- Lendings ---------- */
+
+export async function loadLendings(): Promise<Lending[]> {
+  try { return await (await db()).getAll("lendings"); } catch { return []; }
+}
+
+export async function saveLending(l: Lending): Promise<void> {
+  try { await (await db()).put("lendings", l); } catch {}
+}
+
+export async function deleteLending(id: string): Promise<void> {
+  try { await (await db()).delete("lendings", id); } catch {}
 }

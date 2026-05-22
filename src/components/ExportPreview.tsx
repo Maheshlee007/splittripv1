@@ -3,7 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { Group } from "@/lib/types";
 import { exportExcel, exportJSON, exportPDF, buildWhatsAppText, shareWhatsApp, exportImage, buildPDFBlobUrl, buildJSONString } from "@/lib/exports";
-import { Download, Share2, Copy } from "lucide-react";
+import { Download, Share2, Copy ,BarChart3 } from "lucide-react";
 import { toast } from "sonner";
 
 type Kind = "pdf" | "json" | "whatsapp" | "image" | null;
@@ -94,7 +94,8 @@ export function ExportPreview({
           )}
           {kind === "image" && (
             imgUrl ? <img src={imgUrl} alt="preview" className="block max-w-full" /> :
-            <div className="grid h-48 place-items-center text-xs text-muted-foreground">Rendering…</div>
+            <div className=" h-48  text-sm text-muted-foreground flex items-center justify-center">Rendering….<br/> If not showed Click on Bar icon  and Try Again.<BarChart3 className=" h-4 w-4 text-white" /> </div>
+             
           )}
           {kind === "whatsapp" && (
             <pre className="max-h-[65vh] overflow-auto whitespace-pre-wrap p-4 text-xs leading-relaxed">{text}</pre>

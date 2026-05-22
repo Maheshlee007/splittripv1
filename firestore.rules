@@ -2,19 +2,29 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     // Firestore is used strictly as a transient WebRTC signaling channel.
+    // This app is auth-less (no Firebase Auth). Rules validate document shape only.
+    // Documents auto-expire via Firebase TTL Extension (ttl field set to 14 days from creation).
+
     match /trips/{tripId} {
-      allow read: if isValidTripId(tripId);
-      allow create, update: if isValidTripId(tripId) && isSignalingDocument();
+      // Only allow get (single doc by ID), NOT list (prevents querying entire collection)
+      allow get: if isValidTripId(tripId);
+      allow list: if false;
+      allow create: if isValidTripId(tripId) && isSignalingDocument();
+      allow update: if isValidTripId(tripId) && isSignalingDocument();
+      // Allow delete only for valid trip IDs (owner validation is client-side since no auth)
       allow delete: if isValidTripId(tripId);
 
       // Subcollection: each peer writes their own signaling doc
       match /peers/{peerId} {
-        allow read: if isValidTripId(tripId);
+        allow get: if isValidTripId(tripId);
+        // Allow list within a specific trip's peers (needed for cleanup)
+        allow list: if isValidTripId(tripId);
         allow create, update: if isValidTripId(tripId) && isPeerSignalingDoc();
         allow delete: if isValidTripId(tripId);
       }
     }
 
+    // Catch-all deny for everything else
     match /{document=**} {
       allow read, write: if false;
     }
@@ -24,7 +34,8 @@ service cloud.firestore {
     }
 
     function isSignalingDocument() {
-      return request.resource.data.keys().hasOnly(['ownerId'])
+      // Allow ownerId + optional ttl field for auto-expiry
+      return request.resource.data.keys().hasOnly(['ownerId', 'ttl'])
         && ('ownerId' in request.resource.data && request.resource.data.ownerId is string);
     }
 

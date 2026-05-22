@@ -110,7 +110,12 @@ export interface Profile {
 
 /* ---------- Personal Expense Tracker ---------- */
 
-export type PaymentMethod = "upi" | "credit" | "debit" | "cash" | "wallet";
+export interface CustomPaymentMethod {
+  id: string;
+  label: string;
+  icon?: string;         // lucide icon name or emoji
+  isDefault?: boolean;
+}
 
 export interface PersonalExpense {
   id: string;
@@ -118,7 +123,7 @@ export interface PersonalExpense {
   amount: number;
   currency: string;
   category: string;
-  paymentMethod: PaymentMethod;
+  paymentMethod: string;   // ID from CustomPaymentMethod
   date: number;            // epoch ms — actual expense date
   monthKey: string;        // "2026-05" — derived from date, stored for indexing
   note?: string;
@@ -132,4 +137,22 @@ export interface PersonalBudget {
   category?: string;       // undefined = overall budget for month
   amount: number;
   currency: string;
+}
+
+export type LendingDirection = "owed_to_me" | "i_owe";
+
+export interface Lending {
+  id: string;
+  personName: string;
+  personPhone?: string;
+  amount: number;
+  currency: string;
+  direction: LendingDirection;
+  reason?: string;
+  date: number;
+  dueDate?: number;
+  status: "pending" | "partial" | "settled";
+  partialAmount?: number;
+  settledAt?: number;
+  createdAt: number;
 }

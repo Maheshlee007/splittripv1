@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { Outlet, NavLink, useLocation } from "react-router-dom";
-import { Home, Receipt, Inbox, Scale, User, Wifi, WifiOff, Sun, Moon, Monitor, ChevronLeft, ChevronRight, Radio, Smartphone, ExternalLink, X } from "lucide-react";
+import { Outlet, NavLink, useLocation, useNavigate } from "react-router-dom";
+import { Home, Receipt, Inbox, Scale, User, Wifi, WifiOff, Sun, Moon, Monitor, ChevronLeft, ChevronRight, Radio, Smartphone, X, LayoutDashboard, HandCoins, Users2, Wallet } from "lucide-react";
 import { useApp } from "@/store/AppStore";
 import { onSyncStatus, type SyncStatus } from "@/lib/sync";
 import { cn } from "@/lib/utils";
@@ -8,7 +8,9 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { usePWAInstall } from "@/hooks/usePWAInstall";
 
-const tabs = [
+type AppMode = "group" | "personal";
+
+const groupTabs = [
   { to: "/", icon: Home, label: "Trips", end: true },
   { to: "/expenses", icon: Receipt, label: "Expenses" },
   { to: "/requests", icon: Inbox, label: "Requests" },
@@ -16,21 +18,97 @@ const tabs = [
   { to: "/me", icon: User, label: "Me" },
 ];
 
+const personalTabs = [
+  { to: "/personal", icon: LayoutDashboard, label: "Dashboard", end: true },
+  { to: "/personal/expenses", icon: Receipt, label: "Expenses" },
+  { to: "/personal/lending", icon: HandCoins, label: "Lending" },
+  { to: "/me", icon: User, label: "Me" },
+];
+
 function ThemeToggle({ compact = false }: { compact?: boolean }) {
-  const { themePref, toggleTheme } = useApp();
-  const Icon = themePref === "light" ? Sun : themePref === "dark" ? Moon : Monitor;
-  const label = themePref[0].toUpperCase() + themePref.slice(1);
+  const { themePref, setThemePref } = useApp();
+  if (compact) {
+    const Icon = themePref === "light" ? Sun : themePref === "dark" ? Moon : Monitor;
+    return (
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={() => setThemePref(themePref === "light" ? "dark" : themePref === "dark" ? "system" : "light")}
+        aria-label={`Theme: ${themePref}`}
+        className="h-9 w-9 rounded-full hover:bg-secondary"
+      >
+        <Icon className="h-[18px] w-[18px]" />
+      </Button>
+    );
+  }
   return (
-    <Button
-      variant="ghost"
-      size={compact ? "icon" : "sm"}
-      onClick={toggleTheme}
-      aria-label={`Theme: ${themePref}. Click to cycle.`}
-      className={cn("rounded-full hover:bg-secondary", compact ? "h-9 w-9" : "h-9 gap-2 px-3")}
-    >
-      <Icon className="h-[18px] w-[18px]" />
-      {!compact && <span className="text-xs font-medium">{label}</span>}
-    </Button>
+    <div className="flex items-center gap-1 rounded-lg bg-secondary p-0.5">
+      {([
+        { id: "system", icon: Monitor },
+        { id: "light", icon: Sun },
+        { id: "dark", icon: Moon },
+      ] as const).map((o) => {
+        const Icon = o.icon;
+        const active = themePref === o.id;
+        return (
+          <button
+            key={o.id}
+            onClick={() => setThemePref(o.id)}
+            className={cn(
+              "grid h-7 w-7 place-items-center rounded-md transition",
+              active ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+            )}
+            title={o.id[0].toUpperCase() + o.id.slice(1)}
+          >
+            <Icon className="h-3.5 w-3.5" />
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function ModeSwitch({ mode, setMode, compact = false }: { mode: AppMode; setMode: (m: AppMode) => void; compact?: boolean }) {
+  const navigate = useNavigate();
+  const handleSwitch = (m: AppMode) => {
+    setMode(m);
+    navigate(m === "personal" ? "/personal" : "/");
+  };
+  if (compact) {
+    return (
+      <div className="flex rounded-lg bg-secondary p-0.5">
+        <button
+          onClick={() => handleSwitch("group")}
+          className={cn("grid h-8 w-8 place-items-center rounded-md transition", mode === "group" ? "bg-background shadow-sm text-primary" : "text-muted-foreground")}
+          title="Group Trips"
+        >
+          <Users2 className="h-4 w-4" />
+        </button>
+        <button
+          onClick={() => handleSwitch("personal")}
+          className={cn("grid h-8 w-8 place-items-center rounded-md transition", mode === "personal" ? "bg-background shadow-sm text-primary" : "text-muted-foreground")}
+          title="Personal"
+        >
+          <Wallet className="h-4 w-4" />
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div className="flex rounded-lg bg-secondary p-0.5">
+      <button
+        onClick={() => handleSwitch("group")}
+        className={cn("flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition", mode === "group" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground")}
+      >
+        <Users2 className="h-3.5 w-3.5" /> Group
+      </button>
+      <button
+        onClick={() => handleSwitch("personal")}
+        className={cn("flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition", mode === "personal" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground")}
+      >
+        <Wallet className="h-3.5 w-3.5" /> Personal
+      </button>
+    </div>
   );
 }
 
@@ -41,11 +119,29 @@ export default function AppShell() {
   const [collapsed, setCollapsed] = useState<boolean>(() => localStorage.getItem("splittrip:nav-collapsed") === "1");
   const [signalingUp, setSignalingUp] = useState(false);
   const { canInstall, isInstalled, promptInstall } = usePWAInstall();
-  const [installDismissed, setInstallDismissed] = useState(() => sessionStorage.getItem("splittrip:pwa-dismissed") === "1");
+  const [installDismissed, setInstallDismissed] = useState(false);
   const isDesktop = typeof window !== "undefined" && !("ontouchstart" in window);
   const isStandalone = typeof window !== "undefined" && (window.matchMedia("(display-mode: standalone)").matches || (navigator as any).standalone);
   const showInstallBanner = canInstall && !installDismissed && !isDesktop && !isStandalone;
   const [showInstallModal, setShowInstallModal] = useState(false);
+
+  // Mode state — auto-detect from URL
+  const [mode, setMode] = useState<AppMode>(() => {
+    if (loc.pathname.startsWith("/personal")) return "personal";
+    return (localStorage.getItem("splittrip:mode") as AppMode) || "group";
+  });
+
+  useEffect(() => {
+    const isPersonal = loc.pathname.startsWith("/personal");
+    if (isPersonal && mode !== "personal") setMode("personal");
+    else if (!isPersonal && mode === "personal" && loc.pathname !== "/me") setMode("group");
+  }, [loc.pathname]);
+
+  useEffect(() => {
+    localStorage.setItem("splittrip:mode", mode);
+  }, [mode]);
+
+  const currentTabs = mode === "personal" ? personalTabs : groupTabs;
 
   // Desktop: show modal on first visit if installable
   useEffect(() => {
@@ -76,6 +172,7 @@ export default function AppShell() {
 
   const StatusPill = () => {
     const live = totalPeers > 0;
+    if (mode === "personal") return null;
     return (
       <span className={cn(
         "flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium",
@@ -93,7 +190,7 @@ export default function AppShell() {
       <div className="sticky top-0 z-40 flex items-center justify-between border-b border-border bg-background/85 backdrop-blur safe-top px-4 py-2 md:hidden">
         <div className="flex items-center gap-2">
           <div className="grid h-7 w-7 place-items-center rounded-lg gradient-primary text-primary-foreground text-xs font-bold">S</div>
-          <div className="text-sm font-semibold">SplitTrip</div>
+          <ModeSwitch mode={mode} setMode={setMode} compact />
           <StatusPill />
         </div>
         <div className="flex items-center gap-1">
@@ -111,7 +208,7 @@ export default function AppShell() {
         "relative hidden shrink-0 border-r border-border bg-card transition-[width] duration-200 md:flex md:flex-col",
         collapsed ? "w-16" : "w-60"
       )}>
-        <div className={cn("flex items-center gap-2 px-3 py-5", collapsed ? "justify-center" : "justify-between px-5")}>
+        <div className={cn("flex items-center gap-2 px-3 py-4", collapsed ? "justify-center" : "px-4")}>
           <div className="flex min-w-0 items-center gap-2">
             <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl gradient-primary text-primary-foreground font-bold">S</div>
             {!collapsed && (
@@ -123,8 +220,13 @@ export default function AppShell() {
           </div>
         </div>
 
+        {/* Mode switch in sidebar */}
+        <div className={cn("px-2 pb-3", collapsed && "flex justify-center")}>
+          <ModeSwitch mode={mode} setMode={setMode} compact={collapsed} />
+        </div>
+
         <nav className="flex flex-col gap-1 p-2">
-          {tabs.map((t) => (
+          {currentTabs.map((t) => (
             <NavLink
               key={t.to}
               to={t.to}
@@ -153,20 +255,31 @@ export default function AppShell() {
           ))}
         </nav>
 
-        {/* Bottom controls: theme + install + collapse */}
-        <div className={cn("mt-auto flex items-center gap-1 border-t border-border p-2", collapsed ? "flex-col" : "justify-between px-3")}>
-          <div className="flex flex-col items-center gap-1">
+        {/* Bottom controls */}
+        <div className={cn("mt-auto flex flex-col gap-2 border-t border-border p-2", collapsed && "items-center")}>
+          {/* Theme selector */}
+          <div className={cn("flex items-center", collapsed ? "justify-center" : "px-1")}>
             <ThemeToggle compact={collapsed} />
-            {!isStandalone && canInstall && (
-              <Button variant="ghost" size="icon"  className={cn("rounded-full hover:bg-secondary ", !collapsed ? "h-9 w-9 ml-8" : "h-9 gap-2 px-3")} onClick={promptInstall} aria-label="Install app">
-                <Smartphone className="h-[18px] w-[18px]" /> {!collapsed && "Install APP"}
-              </Button>
-            )}
+            {!collapsed && <span className="ml-2 text-[11px] text-muted-foreground">Theme</span>}
           </div>
+          {/* Install App */}
+          {!isStandalone && canInstall && (
+            <button
+              onClick={promptInstall}
+              className={cn(
+                "flex items-center gap-2 rounded-lg px-2 py-2 text-sm font-medium transition hover:bg-secondary",
+                collapsed && "justify-center px-0"
+              )}
+            >
+              <Smartphone className="h-4 w-4 text-primary" />
+              {!collapsed && <span className="text-xs">Install App</span>}
+            </button>
+          )}
+          {/* Collapse toggle */}
           <Button
             variant="ghost"
             size="icon"
-            className="h-9 w-9 rounded-full"
+            className={cn("h-8 w-8 rounded-full", !collapsed && "self-end")}
             onClick={() => setCollapsed((c) => !c)}
             aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
@@ -184,7 +297,7 @@ export default function AppShell() {
           </Button>
           <button
             className="grid h-6 w-6 place-items-center rounded-full hover:bg-secondary"
-            onClick={() => { setInstallDismissed(true); sessionStorage.setItem("splittrip:pwa-dismissed", "1"); }}
+            onClick={() => setInstallDismissed(true)}
             aria-label="Dismiss install banner"
           >
             <X className="h-3.5 w-3.5" />
@@ -198,7 +311,7 @@ export default function AppShell() {
 
       {/* Mobile bottom nav */}
       <nav className="fixed inset-x-0 bottom-0 z-40 flex justify-around border-t border-border bg-card/95 backdrop-blur safe-bottom md:hidden">
-        {tabs.map((t) => (
+        {currentTabs.map((t) => (
           <NavLink
             key={t.to}
             to={t.to}
@@ -228,7 +341,6 @@ export default function AppShell() {
         if (!v) {
           setShowInstallModal(false);
           setInstallDismissed(true);
-          sessionStorage.setItem("splittrip:pwa-dismissed", "1");
         }
       }}>
         <DialogContent className="w-[calc(100vw-2rem)] max-w-sm text-center">
@@ -254,7 +366,6 @@ export default function AppShell() {
               <Button variant="ghost" className="w-full" onClick={() => {
                 setShowInstallModal(false);
                 setInstallDismissed(true);
-                sessionStorage.setItem("splittrip:pwa-dismissed", "1");
               }}>
                 Maybe later
               </Button>

@@ -63,7 +63,7 @@ export function PersonalYearGrid() {
           return (
             <button
               key={m.key}
-              onClick={() => navigate(`/me/month/${m.key.replace("-", "/")}`)}
+              onClick={() => navigate(`/personal/expenses/${m.key.replace("-", "/")}`)}
               disabled={isFuture && m.total === 0}
               className={cn(
                 "relative flex flex-col gap-1 rounded-xl border p-3 text-left transition-all hover:shadow-elevated",

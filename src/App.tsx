@@ -10,7 +10,11 @@ import TripsPage from "@/pages/TripsPage";
 import GroupPage from "@/pages/GroupPage";
 import TripPickerPage from "@/pages/TripPickerPage";
 import MePage from "@/pages/MePage";
+import PersonalLayout from "@/pages/PersonalLayout";
+import PersonalDashboardPage from "@/pages/PersonalDashboardPage";
+import PersonalExpensesPage from "@/pages/PersonalExpensesPage";
 import MonthDetailPage from "@/pages/MonthDetailPage";
+import LendingPage from "@/pages/LendingPage";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -31,7 +35,13 @@ const App = () => (
                 <Route path="/balances" element={<TripPickerPage title="Balances" subtitle="Across your trips" target="balances" />} />
                 <Route path="/requests" element={<TripPickerPage title="Requests" subtitle="Across your trips" target="requests" />} />
                 <Route path="/me" element={<MePage />} />
-                <Route path="/me/month/:year/:month" element={<MonthDetailPage />} />
+                {/* Personal mode routes */}
+                <Route path="/personal" element={<PersonalLayout />}>
+                  <Route index element={<PersonalDashboardPage />} />
+                  <Route path="expenses" element={<PersonalExpensesPage />} />
+                  <Route path="expenses/:year/:month" element={<MonthDetailPage />} />
+                  <Route path="lending" element={<LendingPage />} />
+                </Route>
               </Route>
               <Route path="*" element={<NotFound />} />
             </Routes>

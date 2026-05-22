@@ -216,8 +216,8 @@ export default function TripsPage() {
                       syncDisabled ? "border-primary bg-primary/10 text-primary" : "border-border bg-secondary text-secondary-foreground"
                     }`}
                   >
-                    <div className="flex items-center justify-center gap-1.5"><WifiOff className="h-4 w-4" /> Self Only</div>
-                    <div className="mt-0.5 text-[10px] font-normal opacity-80">Local expense tracker</div>
+                    <div className="flex items-center justify-center gap-1.5"><WifiOff className="h-4 w-4" /> Self Track</div>
+                    <div className="mt-0.5 text-[10px] font-normal opacity-80">Manage expenses Alone</div>
                   </button>
                 </div>
               </div>

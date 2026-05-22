@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useMemo, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,9 +7,19 @@ import { Textarea } from "@/components/ui/textarea";
 import { CategoryPicker } from "@/components/CategoryPicker";
 import { PaymentMethodPicker } from "@/components/PaymentMethodPicker";
 import { Camera, X, Image as ImageIcon } from "lucide-react";
-import { PersonalExpense, PaymentMethod } from "@/lib/types";
+import { PersonalExpense } from "@/lib/types";
 import { deriveMonthKey, compressBillImage } from "@/lib/personal-utils";
 import { usePersonal } from "@/store/PersonalStore";
+
+const DESCRIPTION_SUGGESTIONS = [
+  "Breakfast", "Lunch", "Dinner", "Coffee", "Tea", "Snacks", "Groceries",
+  "Fruits", "Vegetables", "Medicine", "Petrol", "Diesel", "Auto/Cab",
+  "Bus", "Train", "Metro", "Uber/Ola", "Rent", "Electricity", "Water",
+  "Internet", "Mobile Recharge", "Gym", "Laundry", "Haircut", "Shopping",
+  "Clothes", "Movies", "Subscription", "Milk", "Bread", "Eggs", "Rice",
+  "Parking", "Toll", "Insurance", "EMI", "Gas cylinder", "Salon",
+  "Stationery", "Books", "Gift", "Donation", "Repair", "Maintenance",
+];
 
 interface Props {
   open: boolean;
@@ -29,17 +39,46 @@ function fromDateInput(dateStr: string, fallback: number): number {
 }
 
 export function PersonalExpenseDialog({ open, onOpenChange, initial, defaultCurrency = "INR" }: Props) {
-  const { addExpense, updateExpense } = usePersonal();
+  const { addExpense, updateExpense, expenses: allExpenses } = usePersonal();
   const isEdit = !!initial;
 
   const [desc, setDesc] = useState(initial?.description ?? "");
   const [amount, setAmount] = useState(initial?.amount?.toString() ?? "");
   const [category, setCategory] = useState(initial?.category ?? "food");
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(initial?.paymentMethod ?? "upi");
+  const [paymentMethod, setPaymentMethod] = useState<string>(initial?.paymentMethod ?? "upi");
   const [expenseDate, setExpenseDate] = useState(toDateInput(initial?.date));
   const [note, setNote] = useState(initial?.note ?? "");
   const [billImage, setBillImage] = useState<string | undefined>(initial?.billImage);
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const descRef = useRef<HTMLInputElement>(null);
+
+  // Reset form when dialog opens or initial changes
+  useEffect(() => {
+    if (open) {
+      setDesc(initial?.description ?? "");
+      setAmount(initial?.amount?.toString() ?? "");
+      setCategory(initial?.category ?? "food");
+      setPaymentMethod(initial?.paymentMethod ?? "upi");
+      setExpenseDate(toDateInput(initial?.date));
+      setNote(initial?.note ?? "");
+      setBillImage(initial?.billImage);
+      setShowSuggestions(false);
+    }
+  }, [open, initial]);
+
+  // Build suggestions from presets + user's past descriptions
+  const suggestions = useMemo(() => {
+    const past = [...new Set(allExpenses.map((e) => e.description))].slice(0, 20);
+    const all = [...new Set([...past, ...DESCRIPTION_SUGGESTIONS])];
+    return all;
+  }, [allExpenses]);
+
+  const filteredSuggestions = useMemo(() => {
+    if (!desc.trim()) return suggestions.slice(0, 10);
+    const q = desc.toLowerCase();
+    return suggestions.filter((s) => s.toLowerCase().includes(q)).slice(0, 8);
+  }, [desc, suggestions]);
 
   const amountNum = parseFloat(amount) || 0;
   const canSave = desc.trim().length > 0 && amountNum > 0;
@@ -87,9 +126,33 @@ export function PersonalExpenseDialog({ open, onOpenChange, initial, defaultCurr
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
-          <div>
+          <div className="relative">
             <Label>Description</Label>
-            <Input value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Coffee, groceries, rent…" autoFocus />
+            <Input
+              ref={descRef}
+              value={desc}
+              onChange={(e) => { setDesc(e.target.value); setShowSuggestions(true); }}
+              onFocus={() => setShowSuggestions(true)}
+              onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+              placeholder="Coffee, groceries, rent…"
+              autoFocus
+              autoComplete="off"
+            />
+            {showSuggestions && filteredSuggestions.length > 0 && (
+              <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-40 overflow-y-auto rounded-lg border border-border bg-popover p-1 shadow-md">
+                {filteredSuggestions.map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => { setDesc(s); setShowSuggestions(false); }}
+                    className="flex w-full items-center rounded-md px-2 py-1.5 text-sm hover:bg-accent text-left"
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-2">
