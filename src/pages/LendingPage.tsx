@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { usePersonal } from "@/store/PersonalStore";
 import { useApp } from "@/store/AppStore";
 import { PageHeader } from "@/components/PageHeader";
@@ -28,12 +28,14 @@ export default function LendingPage() {
   const owedToMe = useMemo(() => pending.filter((l) => l.direction === "owed_to_me").reduce((s, l) => s + l.amount - (l.partialAmount ?? 0), 0), [pending]);
   const iOwe = useMemo(() => pending.filter((l) => l.direction === "i_owe").reduce((s, l) => s + l.amount - (l.partialAmount ?? 0), 0), [pending]);
 
-  const handleSettle = async (l: Lending) => {
-    await updateLending({ ...l, status: "settled", settledAt: Date.now() });
+  const [settleTarget, setSettleTarget] = useState<Lending | null>(null);
+
+  const handleSettle = (l: Lending) => {
+    setSettleTarget(l);
   };
 
   const handleUnsettle = async (l: Lending) => {
-    await updateLending({ ...l, status: "pending", settledAt: undefined });
+    await updateLending({ ...l, status: "pending", partialAmount: undefined, settledAt: undefined });
   };
 
   return (
@@ -128,12 +130,17 @@ export default function LendingPage() {
                 <p className={cn("text-sm font-bold tabular-nums", l.direction === "owed_to_me" ? "text-success" : "text-destructive")}>
                   {fmtMoney(l.amount, currency)}
                 </p>
+                {(l.partialAmount ?? 0) > 0 && l.status !== "settled" && (
+                  <p className="text-[10px] text-muted-foreground">
+                    Remaining: {fmtMoney(l.amount - (l.partialAmount ?? 0), currency)}
+                  </p>
+                )}
                 {l.status === "settled" ? (
-                  <button onClick={() => handleUnsettle(l)} className="mt-1 text-[10px] text-muted-foreground hover:text-foreground flex items-center gap-0.5">
+                  <button onClick={() => handleUnsettle(l)} className="mt-1 text-[10px] text-muted-foreground hover:text-foreground flex items-center gap-0.5 ml-auto">
                     <Undo2 className="h-3 w-3" /> Undo
                   </button>
                 ) : (
-                  <button onClick={() => handleSettle(l)} className="mt-1 text-[10px] text-primary font-medium hover:underline flex items-center gap-0.5">
+                  <button onClick={() => handleSettle(l)} className="mt-1 text-[10px] text-primary font-medium hover:underline flex items-center gap-0.5 ml-auto">
                     <Check className="h-3 w-3" /> Settle
                   </button>
                 )}
@@ -144,6 +151,7 @@ export default function LendingPage() {
       </div>
 
       <AddLendingDialog open={showAdd} onOpenChange={setShowAdd} currency={currency} />
+      <SettleDialog lending={settleTarget} onClose={() => setSettleTarget(null)} currency={currency} />
     </>
   );
 }
@@ -234,6 +242,115 @@ function AddLendingDialog({ open, onOpenChange, currency }: { open: boolean; onO
         </div>
         <DialogFooter>
           <Button onClick={handleSave} disabled={!canSave} className="w-full">Add</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function SettleDialog({ lending, onClose, currency }: { lending: Lending | null; onClose: () => void; currency: string }) {
+  const { updateLending } = usePersonal();
+  const [mode, setMode] = useState<"full" | "partial">("full");
+  const [partialAmt, setPartialAmt] = useState("");
+
+  // Reset state when lending changes
+  useEffect(() => {
+    if (lending) {
+      setMode("full");
+      setPartialAmt("");
+    }
+  }, [lending]);
+
+  if (!lending) return null;
+
+  const remaining = lending.amount - (lending.partialAmount ?? 0);
+
+  const handleConfirm = async () => {
+    if (mode === "full") {
+      await updateLending({ ...lending, status: "settled", partialAmount: lending.amount, settledAt: Date.now() });
+    } else {
+      const amt = parseFloat(partialAmt);
+      if (!amt || amt <= 0 || amt > remaining) return;
+      const newPartial = (lending.partialAmount ?? 0) + amt;
+      const isFullySettled = newPartial >= lending.amount;
+      await updateLending({
+        ...lending,
+        partialAmount: newPartial,
+        status: isFullySettled ? "settled" : "partial",
+        settledAt: isFullySettled ? Date.now() : undefined,
+      });
+    }
+    onClose();
+  };
+
+  const canConfirm = mode === "full" || (parseFloat(partialAmt) > 0 && parseFloat(partialAmt) <= remaining);
+
+  return (
+    <Dialog open={!!lending} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="w-full max-w-[calc(100vw-1rem)] sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Settle — {lending.personName}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 py-2">
+          <div className="rounded-xl border border-border bg-secondary/50 p-3 text-center">
+            <p className="text-xs text-muted-foreground">Total amount</p>
+            <p className="text-lg font-bold tabular-nums">{fmtMoney(lending.amount, currency)}</p>
+            {(lending.partialAmount ?? 0) > 0 && (
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Already settled: {fmtMoney(lending.partialAmount ?? 0, currency)} · Remaining: <span className="font-semibold text-foreground">{fmtMoney(remaining, currency)}</span>
+              </p>
+            )}
+          </div>
+
+          {/* Full / Partial toggle */}
+          <div className="flex rounded-lg bg-secondary p-0.5">
+            <button
+              type="button"
+              onClick={() => setMode("full")}
+              className={cn("flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium transition", mode === "full" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground")}
+            >
+              <Check className="h-4 w-4" /> Full Settle
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode("partial")}
+              className={cn("flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium transition", mode === "partial" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground")}
+            >
+              Partial
+            </button>
+          </div>
+
+          {mode === "partial" && (
+            <div>
+              <Label>Amount to settle ({currency})</Label>
+              <Input
+                inputMode="decimal"
+                value={partialAmt}
+                onChange={(e) => setPartialAmt(e.target.value.replace(/[^\d.]/g, ""))}
+                placeholder={`Max ${fmtMoney(remaining, currency)}`}
+                autoFocus
+              />
+              {partialAmt && parseFloat(partialAmt) > 0 && parseFloat(partialAmt) <= remaining && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  After this: {fmtMoney(remaining - parseFloat(partialAmt), currency)} remaining
+                </p>
+              )}
+              {partialAmt && parseFloat(partialAmt) > remaining && (
+                <p className="mt-1 text-xs text-destructive">Cannot exceed remaining amount</p>
+              )}
+            </div>
+          )}
+
+          {mode === "full" && (
+            <p className="text-xs text-muted-foreground text-center">
+              This will mark the full remaining amount of {fmtMoney(remaining, currency)} as settled.
+            </p>
+          )}
+        </div>
+        <DialogFooter>
+          <Button onClick={handleConfirm} disabled={!canConfirm} className="w-full">
+            {mode === "full" ? "Settle Fully" : "Record Partial Payment"}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -5,6 +5,8 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppStoreProvider } from "@/store/AppStore";
 import { ConfirmProvider } from "@/components/ConfirmDialog";
+import { ReloadPrompt } from "@/components/ReloadPrompt";
+import { InstallPromptToast } from "@/components/InstallPromptToast";
 import AppShell from "@/components/AppShell";
 import TripsPage from "@/pages/TripsPage";
 import GroupPage from "@/pages/GroupPage";
@@ -46,6 +48,8 @@ const App = () => (
               <Route path="*" element={<NotFound />} />
             </Routes>
           </BrowserRouter>
+          <ReloadPrompt />
+          <InstallPromptToast />
         </ConfirmProvider>
       </AppStoreProvider>
     </TooltipProvider>

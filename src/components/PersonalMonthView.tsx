@@ -252,7 +252,7 @@ export function PersonalMonthView({ monthKey }: Props) {
       </div>
 
       {/* Search + filters — sticky */}
-      <div className="sticky top-[49px] md:top-[57px] z-20 bg-background/95 backdrop-blur pb-2 -mx-4 px-4 pt-2 border-b border-border/50">
+      <div className="sticky top-0 z-20 bg-background/95 backdrop-blur pb-2 -mx-4 px-4 pt-2 border-b border-border/50">
         <div className="flex items-center gap-2">
           <div className="relative flex-1">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -336,13 +336,14 @@ export function PersonalMonthView({ monthKey }: Props) {
                 <th className="px-3 py-2.5">Description</th>
                 <th className="px-3 py-2.5">Category</th>
                 <th className="px-3 py-2.5 hidden md:table-cell">Payment</th>
+                <th className="px-3 py-2.5 hidden lg:table-cell">Note</th>
                 <th className="px-3 py-2.5 text-right">Amount</th>
-                <th className="px-3 py-2.5 w-16"></th>
+                <th className="px-3 py-2.5 w-20"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {filtered.length === 0 && (
-                <tr><td colSpan={6} className="py-8 text-center text-xs text-muted-foreground">No expenses {expenses.length > 0 ? "match your filters" : "this month"}.</td></tr>
+                <tr><td colSpan={7} className="py-8 text-center text-xs text-muted-foreground">No expenses {expenses.length > 0 ? "match your filters" : "this month"}.</td></tr>
               )}
               {filtered.sort((a, b) => b.date - a.date).map((e) => {
                 const cat = getCategory(e.category);
@@ -364,9 +365,21 @@ export function PersonalMonthView({ monthKey }: Props) {
                     <td className="px-3 py-2 text-xs text-muted-foreground hidden md:table-cell">
                       <span className="inline-flex items-center gap-1"><pm.icon className="h-3 w-3" /> {pm.label}</span>
                     </td>
+                    <td className="px-3 py-2 text-xs text-muted-foreground hidden lg:table-cell max-w-[150px]">
+                      {e.note ? (
+                        <span className="truncate block cursor-default" title={e.note}>{e.note}</span>
+                      ) : (
+                        <span className="text-muted-foreground/50">—</span>
+                      )}
+                    </td>
                     <td className="px-3 py-2 text-right font-semibold tabular-nums whitespace-nowrap">{fmtMoney(e.amount, currency)}</td>
                     <td className="px-2 py-2">
                       <div className="flex items-center gap-0.5">
+                        {e.billImage && (
+                          <button onClick={() => setViewBill(e.billImage!)} className="grid h-6 w-6 place-items-center rounded-md hover:bg-secondary text-muted-foreground hover:text-foreground" title="View bill">
+                            <ImageIcon className="h-3 w-3" />
+                          </button>
+                        )}
                         <button onClick={() => setEditing(e)} className="grid h-6 w-6 place-items-center rounded-md hover:bg-secondary text-muted-foreground hover:text-foreground">
                           <Pencil className="h-3 w-3" />
                         </button>
@@ -392,6 +405,7 @@ export function PersonalMonthView({ monthKey }: Props) {
                 <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{fmtDay(d.ts)}</span>
                 <span className="text-[11px] font-semibold tabular-nums text-muted-foreground">{fmtMoney(d.total, currency)}</span>
               </div>
+              <div className="md:grid md:grid-cols-2 md:gap-2 space-y-1.5 md:space-y-0">
               {d.items.map((e) => {
                 const cat = getCategory(e.category);
                 const pm = getPaymentMethod(e.paymentMethod);
@@ -432,6 +446,7 @@ export function PersonalMonthView({ monthKey }: Props) {
                   </div>
                 );
               })}
+              </div>
             </div>
           ))}
         </div>

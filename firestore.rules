@@ -14,9 +14,8 @@ service cloud.firestore {
 
       // Subcollection: each peer writes their own signaling doc
       match /peers/{peerId} {
-        // Changed 'read' to 'get' here as well
-        allow get: if isValidTripId(tripId);
-        allow list: if false;       // STOPS DDOS/SCRAPING: No one can list all trips
+        // Host needs 'list' to listen for incoming peer connections via onSnapshot
+        allow get, list: if isValidTripId(tripId);
         allow create, update: if isValidTripId(tripId) && isPeerSignalingDoc();
         allow delete: if isValidTripId(tripId);
       }

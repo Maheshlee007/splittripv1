@@ -1,4 +1,4 @@
-import { Beer, Bed, Car, Fuel, Ticket, ShoppingBag, UtensilsCrossed, Plane, Coffee, MoreHorizontal } from "lucide-react";
+import { Beer, Bed, Car, Fuel, Ticket, ShoppingBag, UtensilsCrossed, Plane, Coffee, MoreHorizontal, Banknote } from "lucide-react";
 
 export const CATEGORIES = [
   { id: "food", label: "Food", icon: UtensilsCrossed, color: "hsl(22 95% 53%)" },
@@ -10,6 +10,7 @@ export const CATEGORIES = [
   { id: "shopping", label: "Shopping", icon: ShoppingBag, color: "hsl(330 80% 60%)" },
   { id: "flight", label: "Flight", icon: Plane, color: "hsl(220 80% 60%)" },
   { id: "cafe", label: "Café", icon: Coffee, color: "hsl(30 60% 45%)" },
+  { id: "advance", label: "Advance", icon: Banknote, color: "hsl(145 70% 40%)" },
   { id: "misc", label: "Misc", icon: MoreHorizontal, color: "hsl(220 8% 50%)" },
 ] as const;
 

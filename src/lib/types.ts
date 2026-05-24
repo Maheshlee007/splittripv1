@@ -37,6 +37,16 @@ export interface Expense {
   date?: number;
   createdBy: string;
   updatedAt: number;
+  /** Advance payment: organizer paid upfront, tracking who has reimbursed their share */
+  isAdvance?: boolean;
+  /** Per-member advance payment status (only when isAdvance=true) */
+  advancePayments?: AdvancePayment[];
+}
+
+export interface AdvancePayment {
+  memberId: string;
+  hasPaid: boolean;
+  paidAt?: number;
 }
 
 export type RequestStatus = "pending" | "approved" | "rejected";

@@ -52,6 +52,18 @@ export function computeBalances(group: Group): Record<string, number> {
       if (!net[s.memberId] && net[s.memberId] !== 0) net[s.memberId] = 0;
       net[s.memberId] -= owed;
     }
+    // Advance payments: members who paid their share effectively settle with paidBy
+    if (e.isAdvance && e.advancePayments) {
+      for (const ap of e.advancePayments) {
+        if (ap.hasPaid && ap.memberId !== e.paidBy) {
+          const share = computeShareAmount(e.amount, e.splitMode, e.splits, ap.memberId);
+          if (!net[ap.memberId] && net[ap.memberId] !== 0) net[ap.memberId] = 0;
+          if (!net[e.paidBy] && net[e.paidBy] !== 0) net[e.paidBy] = 0;
+          net[ap.memberId] += share;  // credited back (they paid their share)
+          net[e.paidBy] -= share;     // paidBy received this from the member
+        }
+      }
+    }
   }
   for (const st of group.settlements) {
     const amt = effectiveSettlementAmount(st);
@@ -84,6 +96,16 @@ export function buildMemberLedger(group: Group): MemberLedgerRow[] {
     for (const s of e.splits) {
       if (!rows[s.memberId]) rows[s.memberId] = { memberId: s.memberId, name: group.members.find((m) => m.id === s.memberId)?.name ?? "Unknown", paid: 0, owed: 0, balance: 0, settled: 0, finalBalance: 0 };
       rows[s.memberId].owed += computeShareAmount(e.amount, e.splitMode, e.splits, s.memberId);
+    }
+    // Advance payments count as settlements
+    if (e.isAdvance && e.advancePayments) {
+      for (const ap of e.advancePayments) {
+        if (ap.hasPaid && ap.memberId !== e.paidBy) {
+          const share = computeShareAmount(e.amount, e.splitMode, e.splits, ap.memberId);
+          if (rows[ap.memberId]) rows[ap.memberId].settled += share;
+          if (rows[e.paidBy]) rows[e.paidBy].settled -= share;
+        }
+      }
     }
   }
 

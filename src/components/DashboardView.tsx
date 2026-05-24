@@ -1,9 +1,9 @@
 import { forwardRef, useMemo } from "react";
 import { Group } from "@/lib/types";
-import { buildExpenseBreakdownRows, buildMemberLedger, totalSpent } from "@/lib/balances";
+import { buildExpenseBreakdownRows, buildMemberLedger, totalSpent, computeShareAmount } from "@/lib/balances";
 import { fmtMoney } from "@/lib/format";
 import { getCategory } from "@/lib/categories";
-import { TrendingUp, Users, Receipt, Wallet } from "lucide-react";
+import { TrendingUp, Users, Receipt, Wallet, Banknote } from "lucide-react";
 
 export const DashboardView = forwardRef<HTMLDivElement, { group: Group }>(({ group }, ref) => {
   const total = totalSpent(group);
@@ -112,6 +112,66 @@ export const DashboardView = forwardRef<HTMLDivElement, { group: Group }>(({ gro
           </div>
         )}
       </section>
+
+      {/* Advance Payments Section */}
+      {group.expenses.some(e => e.isAdvance) && (
+        <section className="rounded-2xl border border-border bg-card p-3 shadow-card sm:p-4">
+          <div className="mb-3 flex items-center gap-2">
+            <Banknote className="h-4 w-4 text-success" />
+            <h3 className="text-sm font-semibold">Advance Payments</h3>
+          </div>
+          <div className="overflow-auto rounded-lg border border-border/60">
+            <table className="w-full min-w-[500px] border-collapse text-xs">
+              <thead>
+                <tr className="border-b border-border bg-secondary text-left text-[10px] uppercase tracking-wider text-muted-foreground">
+                  <th className="px-2 py-2 font-semibold">Description</th>
+                  <th className="px-2 py-2 text-right font-semibold">Total</th>
+                  {activeMembers.map((m) => (
+                    <th key={m.id} className="px-2 py-2 text-center font-semibold">{m.name}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {group.expenses.filter(e => e.isAdvance).map((e) => {
+                  const cat = getCategory(e.category);
+                  return (
+                    <tr key={e.id} className="border-b border-border/60 last:border-0 hover:bg-secondary/30">
+                      <td className="px-2 py-2">
+                        <span className="font-medium">{e.description}</span>
+                        <span className="block text-[10px] text-muted-foreground">
+                          {e.advancePayments?.filter(a => a.hasPaid).length ?? 0}/{e.advancePayments?.length ?? 0} collected
+                        </span>
+                      </td>
+                      <td className="px-2 py-2 text-right font-semibold tabular-nums">{fmtMoney(e.amount, group.currency)}</td>
+                      {activeMembers.map((m) => {
+                        const ap = e.advancePayments?.find(a => a.memberId === m.id);
+                        const share = computeShareAmount(e.amount, e.splitMode, e.splits, m.id);
+                        const inSplit = e.splits.some(s => s.memberId === m.id);
+                        if (!inSplit) return <td key={m.id} className="px-2 py-2 text-center text-muted-foreground/40">—</td>;
+                        return (
+                          <td key={m.id} className="px-2 py-2 text-center">
+                            {ap?.hasPaid ? (
+                              <span className="inline-flex flex-col items-center">
+                                <span className="text-success font-semibold tabular-nums">{fmtMoney(share, group.currency)}</span>
+                                <span className="text-[9px] text-success">✓ Paid</span>
+                              </span>
+                            ) : (
+                              <span className="inline-flex flex-col items-center">
+                                <span className="text-destructive font-semibold tabular-nums">0</span>
+                                <span className="text-[9px] text-destructive">✗ Not paid</span>
+                              </span>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
     </div>
   );
 });

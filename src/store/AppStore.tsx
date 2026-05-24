@@ -136,6 +136,21 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
   // theme apply
   useEffect(() => {
     document.documentElement.classList.toggle("dark", resolvedTheme === "dark");
+
+    // Update all theme-color meta tags (some builds inject multiple tags)
+    const changePwaThemeColor = (newColor: string) => {
+      const metaTags = document.querySelectorAll('meta[name="theme-color"]');
+      if (metaTags.length > 0) {
+        metaTags.forEach((tag) => tag.setAttribute("content", newColor));
+      } else {
+        const meta = document.createElement("meta");
+        meta.name = "theme-color";
+        meta.content = newColor;
+        document.head.appendChild(meta);
+      }
+    };
+
+    changePwaThemeColor(resolvedTheme === "dark" ? "#99ff33" : "#F96915");
   }, [resolvedTheme]);
 
   const broadcasterRef = useRef<((g: Group) => void) | null>(null);

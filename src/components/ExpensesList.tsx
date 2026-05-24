@@ -4,7 +4,7 @@ import { useApp } from "@/store/AppStore";
 import { fmtMoney, relativeTime } from "@/lib/format";
 import { computeShareAmount } from "@/lib/balances";
 import { CATEGORIES, getCategory } from "@/lib/categories";
-import { Trash2, Pencil, Receipt, Image as ImageIcon, Search, X } from "lucide-react";
+import { Trash2, Pencil, Receipt, Image as ImageIcon, Search, X, Banknote } from "lucide-react";
 import { ExpenseDialog } from "./ExpenseDialog";
 import { EmptyState } from "./EmptyState";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -128,6 +128,22 @@ export function ExpensesList({ group }: { group: Group }) {
                         )}
                       </div>
                       {e.note && <p className="mt-1 text-xs text-muted-foreground line-clamp-2">{e.note}</p>}
+                      {/* Advance status */}
+                      {e.isAdvance && e.advancePayments && (
+                        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                          <span className="inline-flex items-center gap-1 rounded-md bg-success/10 px-1.5 py-0.5 text-[10px] font-medium text-success">
+                            <Banknote className="h-3 w-3" /> Advance
+                          </span>
+                          <span className="text-[10px] text-muted-foreground">
+                            {e.advancePayments.filter(a => a.hasPaid).length}/{e.advancePayments.length} paid
+                          </span>
+                          {e.advancePayments.filter(a => !a.hasPaid).map(a => (
+                            <span key={a.memberId} className="rounded-md bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive">
+                              {memberName(a.memberId)} ✗
+                            </span>
+                          ))}
+                        </div>
+                      )}
                       <div className="mt-2 flex flex-wrap items-center gap-1">
                         {e.billImage && (
                           <button onClick={() => setViewBill(e.billImage!)} className="flex items-center gap-1 rounded-md bg-secondary px-2 py-1 text-[11px] font-medium text-muted-foreground hover:bg-accent hover:text-foreground">

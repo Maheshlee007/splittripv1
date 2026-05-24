@@ -9,7 +9,7 @@ import { CATEGORIES } from "@/lib/categories";
 import { fmtMoney } from "@/lib/format";
 import { computeShareAmount } from "@/lib/balances";
 import { cn } from "@/lib/utils";
-import { Camera, Image as ImageIcon, X, Users, UserCheck, UserX } from "lucide-react";
+import { Camera, Image as ImageIcon, X, Users, UserCheck, UserX, Banknote } from "lucide-react";
 import { toast } from "sonner";
 
 interface Props {
@@ -74,6 +74,8 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
   const [note, setNote] = useState("");
   const [billImage, setBillImage] = useState<string | undefined>();
   const [expenseDate, setExpenseDate] = useState<string>(toDateInput(Date.now()));
+  const [isAdvance, setIsAdvance] = useState(false);
+  const [advancePaid, setAdvancePaid] = useState<Set<string>>(new Set());
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -89,6 +91,8 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
         setNote(initial.note ?? "");
         setBillImage(initial.billImage);
         setExpenseDate(toDateInput(initial.createdAt));
+        setIsAdvance(initial.isAdvance ?? false);
+        setAdvancePaid(new Set((initial.advancePayments ?? []).filter(a => a.hasPaid).map(a => a.memberId)));
       } else {
         setDesc("");
         setAmount("");
@@ -100,6 +104,8 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
         setNote("");
         setBillImage(undefined);
         setExpenseDate(toDateInput(Date.now()));
+        setIsAdvance(false);
+        setAdvancePaid(new Set());
       }
     }
   }, [open, initial, defaultPaidBy, group.members]);
@@ -149,17 +155,26 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
 
   const handleSave = () => {
     if (!canSave) return;
+    const advancePayments = isAdvance
+      ? [...participants].map(memberId => ({
+          memberId,
+          hasPaid: advancePaid.has(memberId),
+          paidAt: advancePaid.has(memberId) ? Date.now() : undefined,
+        }))
+      : undefined;
     onSave({
       description: desc.trim(),
       amount: amountNum,
       currency: group.currency,
       paidBy,
-      category,
+      category: isAdvance ? "advance" : category,
       note: note.trim() || undefined,
       splitMode: mode,
       splits,
       billImage,
       date: fromDateInput(expenseDate, initial?.date ?? initial?.createdAt ?? Date.now()),
+      isAdvance: isAdvance || undefined,
+      advancePayments,
     } as any);
     onOpenChange(false);
   };
@@ -203,6 +218,27 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
                   </select>
                 </div>
               </div>
+
+              {/* Advance payment toggle */}
+              <label className="flex items-center gap-2 rounded-lg bg-secondary/60 px-3 py-2 cursor-pointer hover:bg-secondary transition">
+                <input
+                  type="checkbox"
+                  checked={isAdvance}
+                  onChange={(e) => {
+                    setIsAdvance(e.target.checked);
+                    if (e.target.checked) {
+                      // Auto-set paidBy to organizer (first member / current user)
+                      if (!note.trim()) setNote("Advance collection");
+                    } else {
+                      if (note === "Advance collection") setNote("");
+                      setAdvancePaid(new Set());
+                    }
+                  }}
+                  className="h-4 w-4 accent-[hsl(var(--primary))]"
+                />
+                <Banknote className="h-4 w-4 text-success" />
+                <span className="text-xs font-medium">Advance collection (track who paid their share)</span>
+              </label>
 
               <div className="grid grid-cols-1 sm:grid-cols-[1fr,auto] gap-2 items-end">
                 <div>
@@ -350,6 +386,63 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
               )}
               {percentInvalid && (
                 <p className="mt-1 text-xs text-destructive">Percentages must add to 100 (currently {sumPercent.toFixed(1)}%)</p>
+              )}
+
+              {/* Advance collection: who has paid their share */}
+              {isAdvance && participants.size > 0 && (
+                <div className="mt-3 rounded-xl border border-success/30 bg-success/5 p-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Banknote className="h-4 w-4 text-success" />
+                    <span className="text-xs font-semibold">Who has paid their advance?</span>
+                    <span className="ml-auto text-[10px] text-muted-foreground">
+                      {advancePaid.size}/{participants.size} collected
+                    </span>
+                  </div>
+                  <div className="space-y-1 max-h-40 overflow-y-auto">
+                    {group.members.filter(m => participants.has(m.id)).map((m) => {
+                      const paid = advancePaid.has(m.id);
+                      const share = amountNum > 0 ? computeShareAmount(amountNum, mode, splits, m.id) : 0;
+                      return (
+                        <label
+                          key={m.id}
+                          className={cn(
+                            "flex items-center gap-2 rounded-lg px-2 py-1.5 cursor-pointer transition",
+                            paid ? "bg-success/10" : "hover:bg-secondary/50"
+                          )}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={paid}
+                            onChange={() => {
+                              setAdvancePaid(prev => {
+                                const next = new Set(prev);
+                                paid ? next.delete(m.id) : next.add(m.id);
+                                return next;
+                              });
+                            }}
+                            className="h-4 w-4 shrink-0 accent-[hsl(145,70%,40%)]"
+                          />
+                          <span className="min-w-0 flex-1 truncate text-sm">{m.name}</span>
+                          <span className={cn("text-xs font-medium tabular-nums", paid ? "text-success" : "text-muted-foreground")}>
+                            {paid ? `✓ ${fmtMoney(share, group.currency)}` : "Not paid"}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  {amountNum > 0 && (
+                    <div className="mt-2 pt-2 border-t border-success/20 flex items-center justify-between text-xs">
+                      <span className="text-muted-foreground">Collected</span>
+                      <span className="font-semibold text-success">
+                        {fmtMoney(
+                          [...advancePaid].reduce((sum, id) => sum + computeShareAmount(amountNum, mode, splits, id), 0),
+                          group.currency
+                        )}
+                        <span className="text-muted-foreground font-normal"> / {fmtMoney(amountNum, group.currency)}</span>
+                      </span>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
 

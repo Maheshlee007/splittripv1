@@ -20,7 +20,7 @@ export default function MonthDetailPage() {
         </Button>
         <PageHeader title={monthKeyFullLabel(monthKey)} subtitle="Personal expenses" />
       </div>
-      <div className="mx-auto max-w-xl px-4 py-4">
+      <div className="mx-auto max-w-xl lg:max-w-5xl px-4 py-4">
         <PersonalMonthView monthKey={monthKey} />
       </div>
     </>
