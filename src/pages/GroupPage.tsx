@@ -78,7 +78,7 @@ export default function GroupPage() {
     () => {
       // Use ref to always get latest group state when a peer connects
       const latestGroup = groupRef.current;
-      if (latestGroup) broadcastGroup(latestGroup);
+      if (latestGroup) broadcastGroup(latestGroup, true);
     },
     group.syncDisabled
   );
@@ -99,6 +99,31 @@ export default function GroupPage() {
   const [forceOffline, setForceOffline] = useState(false);
   const hasLocalData = group.expenses.length > 0;
   const wasApproved = selfMember?.status === "active";
+  const autoSyncStartedRef = useRef(false);
+
+  // Initial auto-sync to avoid requiring manual "Sync" on first join.
+  useEffect(() => {
+    if (group.syncDisabled || group.archived) return;
+    if (status !== "idle" || isSyncing) return;
+    if (autoSyncStartedRef.current) return;
+    autoSyncStartedRef.current = true;
+    startSync({ silent: true });
+  }, [group.syncDisabled, group.archived, status, isSyncing, startSync]);
+
+  // Member retry loop every 30s while waiting in the same screen (visible tab only).
+  useEffect(() => {
+    if (group.syncDisabled || group.archived || isHost) return;
+    if (wasApproved || forceOffline || hasLocalData || status === "connected") return;
+
+    const tick = () => {
+      if (document.visibilityState !== "visible") return;
+      if (isSyncing) return;
+      startSync({ silent: true });
+    };
+
+    const timer = window.setInterval(tick, 30_000);
+    return () => window.clearInterval(timer);
+  }, [group.syncDisabled, group.archived, isHost, wasApproved, forceOffline, hasLocalData, status, isSyncing, startSync]);
 
   // Show WaitingRoom only for non-hosts who haven't been approved yet AND don't have local data
   // Once approved (even if offline), member sees the trip page; WebRTC reconnects in background
@@ -135,7 +160,7 @@ export default function GroupPage() {
         actions={
           <div className="flex items-center gap-1">
             {!group.syncDisabled && (
-              <Button size="sm" variant="ghost" onClick={startSync} title={isHost ? "Sync All" : "Sync Data"} disabled={isSyncing}>
+              <Button size="sm" variant="ghost" onClick={() => startSync()} title={isHost ? "Sync All" : "Sync Data"} disabled={isSyncing}>
                 <RefreshCw className={`h-4 w-4 ${isSyncing ? "animate-spin" : ""}`} />
               </Button>
             )}
@@ -249,7 +274,7 @@ export default function GroupPage() {
                 </span>
               )}
             </span>
-            <Button size="sm" variant="outline" className="h-6 text-[10px] shrink-0" onClick={startSync} disabled={isSyncing}>
+            <Button size="sm" variant="outline" className="h-6 text-[10px] shrink-0" onClick={() => startSync()} disabled={isSyncing}>
               <RefreshCw className={`h-3 w-3 mr-1 ${isSyncing ? "animate-spin" : ""}`} />
               {isSyncing ? "Syncing…" : "Sync"}
             </Button>

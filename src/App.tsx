@@ -17,6 +17,7 @@ import PersonalDashboardPage from "@/pages/PersonalDashboardPage";
 import PersonalExpensesPage from "@/pages/PersonalExpensesPage";
 import MonthDetailPage from "@/pages/MonthDetailPage";
 import LendingPage from "@/pages/LendingPage";
+import HowToPage from "@/pages/HowToPage";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -37,6 +38,7 @@ const App = () => (
                 <Route path="/balances" element={<TripPickerPage title="Balances" subtitle="Across your trips" target="balances" />} />
                 <Route path="/requests" element={<TripPickerPage title="Requests" subtitle="Across your trips" target="requests" />} />
                 <Route path="/me" element={<MePage />} />
+                <Route path="/how-to" element={<HowToPage />} />
                 {/* Personal mode routes */}
                 <Route path="/personal" element={<PersonalLayout />}>
                   <Route index element={<PersonalDashboardPage />} />

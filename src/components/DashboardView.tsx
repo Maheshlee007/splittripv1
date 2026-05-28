@@ -12,6 +12,32 @@ export const DashboardView = forwardRef<HTMLDivElement, { group: Group }>(({ gro
 
   const rows = useMemo(() => buildExpenseBreakdownRows(group), [group]);
   const ledger = useMemo(() => buildMemberLedger(group), [group]);
+  const advanceByMember = useMemo(() => {
+    const paidMap: Record<string, number> = {};
+    const unpaidMap: Record<string, boolean> = {};
+    const ownerExtraMap: Record<string, number> = {};
+    for (const m of activeMembers) {
+      paidMap[m.id] = 0;
+      unpaidMap[m.id] = false;
+      ownerExtraMap[m.id] = 0;
+    }
+
+    for (const e of group.expenses.filter((x) => x.isAdvance)) {
+      let collected = 0;
+      for (const s of e.splits) {
+        const share = computeShareAmount(e.amount, e.splitMode, e.splits, s.memberId);
+        const paidEntry = e.advancePayments?.find((a) => a.memberId === s.memberId);
+        if (paidEntry?.hasPaid) {
+          paidMap[s.memberId] = (paidMap[s.memberId] ?? 0) + share;
+          collected += share;
+        } else {
+          unpaidMap[s.memberId] = true;
+        }
+      }
+      ownerExtraMap[e.paidBy] = (ownerExtraMap[e.paidBy] ?? 0) + Math.max(0, e.amount - collected);
+    }
+    return { paidMap, unpaidMap, ownerExtraMap };
+  }, [group.expenses, activeMembers]);
 
   // Group rows by date for rowspan
   const dateGroups = useMemo(() => {
@@ -98,6 +124,29 @@ export const DashboardView = forwardRef<HTMLDivElement, { group: Group }>(({ gro
                   <td colSpan={2} className="px-2 py-2 text-right">Individual spent</td>
                   <td />
                   {activeMembers.map((m) => <td key={m.id} className="px-2 py-2 text-right tabular-nums text-success">+{fmtMoney(ledger.find((r) => r.memberId === m.id)?.paid ?? 0, group.currency)}</td>)}
+                </tr>
+                <tr className="border-t border-border bg-secondary/40 font-semibold">
+                  <td colSpan={2} className="px-2 py-2 text-right">Total advance</td>
+                  <td />
+                  {activeMembers.map((m) => {
+                    const paid = advanceByMember.paidMap[m.id] ?? 0;
+                    const unpaid = advanceByMember.unpaidMap[m.id] ?? false;
+                    const extra = advanceByMember.ownerExtraMap[m.id] ?? 0;
+                    return (
+                      <td key={m.id} className="px-2 py-2 text-right tabular-nums">
+                        {paid > 0 ? (
+                          <span className="text-success">+{fmtMoney(paid, group.currency)}</span>
+                        ) : unpaid ? (
+                          <span className="text-destructive">Not paid</span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                        {extra > 0 && (
+                          <span className="block text-[10px] font-medium text-warning">extra {fmtMoney(extra, group.currency)}</span>
+                        )}
+                      </td>
+                    );
+                  })}
                 </tr>
                 <tr className="border-t border-border bg-secondary/60 font-bold">
                   <td colSpan={2} className="px-2 py-2 text-right">Balances</td>

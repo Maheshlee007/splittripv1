@@ -502,36 +502,42 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       updateGroup(groupId, (g) => {
         const r = g.requests.find((x) => x.id === requestId);
         if (!r || r.status !== "pending") return g;
+        const requester = g.members.find((m) => m.id === r.requestedBy)?.name ?? "member";
         const exp: Expense = {
           ...r.expense,
           id: nanoid(),
           createdAt: Date.now(),
           updatedAt: Date.now(),
         };
-        return {
+        return withActivity({
           ...g,
           expenses: [exp, ...g.expenses],
           requests: g.requests.map((x) =>
             x.id === requestId ? { ...x, status: "approved", reviewedBy: profile.id, reviewedAt: Date.now() } : x
           ),
-        };
+        }, activity(profile, "approve", `approved ${requester}'s expense request: ${r.expense.description}`));
       });
     },
-    [profile.id, updateGroup]
+    [profile, updateGroup]
   );
 
   const rejectRequest = useCallback(
     (groupId: string, requestId: string, note?: string) => {
-      updateGroup(groupId, (g) => ({
-        ...g,
-        requests: g.requests.map((x) =>
-          x.id === requestId
-            ? { ...x, status: "rejected", reviewedBy: profile.id, reviewedAt: Date.now(), reviewNote: note }
-            : x
-        ),
-      }));
+      updateGroup(groupId, (g) => {
+        const r = g.requests.find((x) => x.id === requestId);
+        if (!r) return g;
+        const requester = g.members.find((m) => m.id === r.requestedBy)?.name ?? "member";
+        return withActivity({
+          ...g,
+          requests: g.requests.map((x) =>
+            x.id === requestId
+              ? { ...x, status: "rejected", reviewedBy: profile.id, reviewedAt: Date.now(), reviewNote: note }
+              : x
+          ),
+        }, activity(profile, "reject", `rejected ${requester}'s expense request: ${r.expense.description}`));
+      });
     },
-    [profile.id, updateGroup]
+    [profile, updateGroup]
   );
 
   const addSettlement = useCallback<AppStoreValue["addSettlement"]>(
@@ -699,6 +705,14 @@ function mergeGroups(a: Group, b: Group): Group {
   const bIsPlaceholder = /^Trip [A-Z0-9]{4,8}$/.test(b.name);
   const pickName = bIsPlaceholder ? a.name : (aIsPlaceholder ? b.name : (b.name || a.name));
   const pickEmoji = (bIsPlaceholder || b.emoji === "🧳") && a.emoji !== "🧳" ? a.emoji : (b.emoji || a.emoji);
+  const pickMemberName = (localName: string | undefined, remoteName: string | undefined) => {
+    const local = (localName ?? "").trim();
+    const remote = (remoteName ?? "").trim();
+    const localIsPlaceholder = !local || local.toLowerCase() === "me";
+    const remoteIsPlaceholder = !remote || remote.toLowerCase() === "me";
+    if (localIsPlaceholder && !remoteIsPlaceholder) return remote;
+    return local || remote || "Me";
+  };
   const merged: Group = {
     ...a,
     name: pickName,
@@ -717,7 +731,7 @@ function mergeGroups(a: Group, b: Group): Group {
       // status: "active" wins over "pending" (owner approval propagates to member)
       status: y.status === "active" ? "active" : x.status ?? y.status,
       // contact info: prefer freshest non-empty
-      name: x.name || y.name,
+      name: pickMemberName(x.name, y.name),
       upiId: x.upiId ?? y.upiId,
       phone: x.phone ?? y.phone,
     })),

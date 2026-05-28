@@ -115,6 +115,7 @@ function ModeSwitch({ mode, setMode, compact = false }: { mode: AppMode; setMode
 export default function AppShell() {
   const { ready, peers } = useApp();
   const loc = useLocation();
+  const navigate = useNavigate();
   const totalPeers = Object.values(peers).reduce((a, b) => a + b.length, 0);
   const [collapsed, setCollapsed] = useState<boolean>(() => localStorage.getItem("splittrip:nav-collapsed") === "1");
   const [signalingUp, setSignalingUp] = useState(false);
@@ -128,6 +129,8 @@ export default function AppShell() {
   // Mode state — auto-detect from URL
   const [mode, setMode] = useState<AppMode>(() => {
     if (loc.pathname.startsWith("/personal")) return "personal";
+    const launchDefault = localStorage.getItem("splittrip:default-mode") as AppMode | null;
+    if (launchDefault === "group" || launchDefault === "personal") return launchDefault;
     return (localStorage.getItem("splittrip:mode") as AppMode) || "group";
   });
 
@@ -135,11 +138,21 @@ export default function AppShell() {
     const isPersonal = loc.pathname.startsWith("/personal");
     if (isPersonal && mode !== "personal") setMode("personal");
     else if (!isPersonal && mode === "personal" && loc.pathname !== "/me") setMode("group");
-  }, [loc.pathname]);
+  }, [loc.pathname, mode]);
 
   useEffect(() => {
     localStorage.setItem("splittrip:mode", mode);
   }, [mode]);
+
+  useEffect(() => {
+    if (!ready) return;
+    if (loc.pathname !== "/") return;
+    const launchDefault = localStorage.getItem("splittrip:default-mode") as AppMode | null;
+    if (launchDefault === "personal") {
+      setMode("personal");
+      navigate("/personal", { replace: true });
+    }
+  }, [ready, loc.pathname, navigate]);
 
   const currentTabs = mode === "personal" ? personalTabs : groupTabs;
 
@@ -161,6 +174,7 @@ export default function AppShell() {
     });
     return off;
   }, []);
+
 
   if (!ready) {
     return (

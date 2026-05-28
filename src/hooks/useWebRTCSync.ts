@@ -17,8 +17,9 @@ const ICE_SERVERS: RTCIceServer[] = [
 
 const ICE_GATHER_TIMEOUT = 8000;
 const SYNC_WINDOW_TIMEOUT = 30_000;
-const HEARTBEAT_INTERVAL = 15_000;
-const HEARTBEAT_TIMEOUT = 20_000;
+const HEARTBEAT_INTERVAL = 30_000;
+const HEARTBEAT_TIMEOUT = 30_000;
+const PRESENCE_STALE_TIMEOUT = 30_000;
 const MAX_AUTO_RECONNECT = 3;
 
 const log = (...args: unknown[]) => console.log("[WebRTC]", ...args);
@@ -76,6 +77,8 @@ export function useWebRTCSync(
   const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const destroyedRef = useRef(false);
   const heartbeatResetRef = useRef<(() => void) | null>(null);
+  const peerLastSeenRef = useRef<Map<string, number>>(new Map());
+  const silentSyncRef = useRef(false);
 
   useEffect(() => { onRemoteGroupRef.current = onRemoteGroup; }, [onRemoteGroup]);
   useEffect(() => { onKickRef.current = onKick; }, [onKick]);
@@ -100,6 +103,7 @@ export function useWebRTCSync(
     pcsRef.current.clear();
     processingPeersRef.current.clear();
     lastProcessedSdpRef.current.clear();
+    peerLastSeenRef.current.clear();
     setOnlineMembers([]);
     stopHeartbeat();
     cleanupFirebase();
@@ -120,8 +124,13 @@ export function useWebRTCSync(
 
   const updateHostPresence = useCallback(() => {
     if (!isHost || !memberId) return;
+    const now = Date.now();
     const activeIds = Array.from(dcsRef.current.entries())
-      .filter(([_, dc]) => dc.readyState === "open")
+      .filter(([peerId, dc]) => {
+        if (dc.readyState !== "open") return false;
+        const lastSeen = peerLastSeenRef.current.get(peerId) ?? 0;
+        return now - lastSeen <= PRESENCE_STALE_TIMEOUT;
+      })
       .map(([id]) => id);
     const online = [memberId, ...activeIds];
     setOnlineMembers(online);
@@ -142,14 +151,15 @@ export function useWebRTCSync(
         stopHeartbeat();
         setStatus("offline");
       }
+      updateHostPresence();
     }, HEARTBEAT_INTERVAL);
-  }, [stopHeartbeat]);
+  }, [stopHeartbeat, updateHostPresence]);
 
-  const broadcastGroup = useCallback((g: Group) => {
+  const broadcastGroup = useCallback((g: Group, force = false) => {
     const payload = JSON.stringify({ type: "snapshot", group: JSON.parse(JSON.stringify(g)) });
     const approvedIds = new Set(g.members.filter(m => m.status === "active").map(m => m.id));
     dcsRef.current.forEach((dc, peerId) => {
-      if (dc.readyState === "open" && (approvedIds.has(peerId) || peerId === "host")) {
+      if (dc.readyState === "open" && (force || approvedIds.has(peerId) || peerId === "host")) {
         try { dc.send(payload); } catch {}
       }
     });
@@ -186,9 +196,13 @@ export function useWebRTCSync(
         }
       } else if (data?.type === "heartbeat_ack") {
         // Host: ack received — peer alive
+        if (isHost && data.memberId) {
+          peerLastSeenRef.current.set(data.memberId, Date.now());
+          updateHostPresence();
+        }
       }
     } catch {}
-  }, [tripId, memberId]);
+  }, [tripId, memberId, isHost, updateHostPresence]);
 
   const waitForIceGathering = useCallback((pc: RTCPeerConnection): Promise<void> => {
     return new Promise<void>((resolve) => {
@@ -318,6 +332,7 @@ export function useWebRTCSync(
             if (destroyedRef.current) return;
             log("Host: DC OPEN with peer:", peerId);
             connected = true;
+            peerLastSeenRef.current.set(peerId, Date.now());
             processingPeersRef.current.delete(peerId);
             setStatus("connected");
             setIsSyncing(false);
@@ -332,6 +347,7 @@ export function useWebRTCSync(
           dc.onclose = () => {
             log("Host: DC closed with peer:", peerId);
             if (!destroyedRef.current) {
+              peerLastSeenRef.current.delete(peerId);
               updateHostPresence();
               const anyOpen = Array.from(dcsRef.current.values()).some(d => d.readyState === "open");
               if (!anyOpen) { stopHeartbeat(); handleConnectionDrop(); }
@@ -376,7 +392,7 @@ export function useWebRTCSync(
         if (!connected) {
           setIsSyncing(false);
           setStatus("idle");
-          toast.info("No active members found. Ask them to click Sync.");
+          if (!silentSyncRef.current) toast.info("No active members found. Ask them to click Sync.");
         }
       }
     }, SYNC_WINDOW_TIMEOUT);
@@ -396,7 +412,7 @@ export function useWebRTCSync(
     try {
       const tripSnap = await getDoc(doc(db, "trips", tripId));
       if (!tripSnap.exists()) {
-        toast.info("Owner hasn't started sync yet. Ask them to open the trip and click Sync.");
+        if (!silentSyncRef.current) toast.info("Owner hasn't started sync yet. Ask them to open the trip and click Sync.");
         setIsSyncing(false);
         setStatus("idle");
         return;
@@ -504,14 +520,15 @@ export function useWebRTCSync(
           pcsRef.current.delete("host");
           dcsRef.current.delete("host");
           setStatus("idle");
-          toast.info("Owner not active. Ask them to click Sync first.");
+          if (!silentSyncRef.current) toast.info("Owner not active. Ask them to click Sync first.");
         }
       }
     }, SYNC_WINDOW_TIMEOUT);
   }, [tripId, code, memberId, syncDisabled, cleanupFirebase, handleDataChannelMessage, waitForIceGathering, startMemberHeartbeat, stopHeartbeat, handleConnectionDrop]);
 
   // Public startSync (resets auto-reconnect counter)
-  const startSync = useCallback(() => {
+  const startSync = useCallback((opts?: { silent?: boolean }) => {
+    silentSyncRef.current = !!opts?.silent;
     autoReconnectCountRef.current = 0;
     if (isHost) startHostSync();
     else startMemberSync();

@@ -48,7 +48,7 @@ export function MembersList({ group, onlineMembers = [] }: { group: Group, onlin
                 <div className="truncate text-sm font-medium">{m.name}</div>
                 {m.phone && <div className="truncate text-xs text-muted-foreground">{m.phone}</div>}
               </div>
-              {isOwner ? (
+              {canManage ? (
                 <>
                   <Button size="sm" variant="ghost" className="h-7 gap-1 text-destructive" onClick={async () => {
                     const ok = await confirm({ title: `Reject ${m.name}?`, description: "They won't be added to this trip.", confirmText: "Reject", destructive: true });
@@ -185,9 +185,9 @@ export function MembersList({ group, onlineMembers = [] }: { group: Group, onlin
             );
           })}
         </div>
-        {!isOwner && (
+        {!canManage && (
           <p className="mt-2 text-[11px] text-muted-foreground">
-            Only the trip owner can approve new members and promote admins.
+            Only owner/admin can approve join requests. Only owner can promote admins.
           </p>
         )}
       </div>

@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { useApp } from "@/store/AppStore";
 import { PageHeader } from "@/components/PageHeader";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Sun, Moon, Monitor, Pencil, User, Phone, AtSign, CheckCircle2, Download, Upload, ShieldAlert } from "lucide-react";
+import { Sun, Moon, Monitor, Pencil, User, Phone, AtSign, CheckCircle2, Download, Upload, ShieldAlert, BookOpen } from "lucide-react";
 import { downloadBackup, restoreBackup } from "@/lib/backup";
 import { toast } from "sonner";
 
@@ -14,12 +15,21 @@ export default function MePage() {
   const [name, setName] = useState(profile.name);
   const [phone, setPhone] = useState(profile.phone ?? "");
   const [upi, setUpi] = useState(profile.upiId ?? "");
+  const [launchMode, setLaunchMode] = useState<"group" | "personal">(
+    () => (localStorage.getItem("splittrip:default-mode") as "group" | "personal") || "group"
+  );
 
   useEffect(() => {
     setName(profile.name);
     setPhone(profile.phone ?? "");
     setUpi(profile.upiId ?? "");
   }, [profile]);
+
+  const saveLaunchMode = (mode: "group" | "personal") => {
+    setLaunchMode(mode);
+    localStorage.setItem("splittrip:default-mode", mode);
+    toast.success(`Default launch set to ${mode}`);
+  };
 
   const save = () => {
     if (!name.trim()) { toast.error("Display name is required"); return; }
@@ -117,9 +127,38 @@ export default function MePage() {
           <p className="text-xs text-muted-foreground">
             Light = orange accent · Dark = radium-green accent · System follows your device.
           </p>
+
+          <div className="pt-2 border-t border-border/60">
+            <Label className="text-xs">Default launch mode</Label>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <button
+                onClick={() => saveLaunchMode("group")}
+                className={`rounded-lg border px-3 py-2 text-xs font-medium transition ${launchMode === "group" ? "border-primary bg-primary/5 text-primary" : "border-border text-muted-foreground hover:bg-secondary"}`}
+              >
+                Group
+              </button>
+              <button
+                onClick={() => saveLaunchMode("personal")}
+                className={`rounded-lg border px-3 py-2 text-xs font-medium transition ${launchMode === "personal" ? "border-primary bg-primary/5 text-primary" : "border-border text-muted-foreground hover:bg-secondary"}`}
+              >
+                Personal
+              </button>
+            </div>
+            <p className="mt-1 text-[11px] text-muted-foreground">Used when the app opens at root route.</p>
+          </div>
         </section>
 
         <BackupSection />
+
+        <section className="space-y-2 rounded-2xl border border-border bg-card p-4 shadow-card">
+          <h3 className="text-sm font-semibold">Help</h3>
+          <p className="text-xs text-muted-foreground">Quick setup, peer connection flow, and troubleshooting.</p>
+          <Button asChild variant="secondary" className="gap-1.5">
+            <Link to="/how-to">
+              <BookOpen className="h-4 w-4" /> How to Use
+            </Link>
+          </Button>
+        </section>
         </div>
 
         {/* Full-width About section below both columns */}
