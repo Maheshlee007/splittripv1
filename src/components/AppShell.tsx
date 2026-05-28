@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Outlet, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { Home, Receipt, Inbox, Scale, User, Wifi, WifiOff, Sun, Moon, Monitor, ChevronLeft, ChevronRight, Radio, Smartphone, X, LayoutDashboard, HandCoins, Users2, Wallet } from "lucide-react";
 import { useApp } from "@/store/AppStore";
@@ -116,6 +116,7 @@ export default function AppShell() {
   const { ready, peers } = useApp();
   const loc = useLocation();
   const navigate = useNavigate();
+  const launchModeAppliedRef = useRef(false);
   const totalPeers = Object.values(peers).reduce((a, b) => a + b.length, 0);
   const [collapsed, setCollapsed] = useState<boolean>(() => localStorage.getItem("splittrip:nav-collapsed") === "1");
   const [signalingUp, setSignalingUp] = useState(false);
@@ -146,6 +147,8 @@ export default function AppShell() {
 
   useEffect(() => {
     if (!ready) return;
+    if (launchModeAppliedRef.current) return;
+    launchModeAppliedRef.current = true;
     if (loc.pathname !== "/") return;
     const launchDefault = localStorage.getItem("splittrip:default-mode") as AppMode | null;
     if (launchDefault === "personal") {

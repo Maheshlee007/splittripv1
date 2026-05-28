@@ -106,6 +106,7 @@ export function MembersList({ group, onlineMembers = [] }: { group: Group, onlin
           {active.map((m, idx) => {
             const isMe = m.id === profile.id;
             const isGroupOwner = m.id === group.ownerId;
+            const isOnline = onlineMembers.includes(m.id);
             return (
               <div key={m.id} className={`flex items-center gap-3 px-3 py-2.5 ${idx > 0 ? "border-t border-border" : ""}`}>
                 <div className="grid h-9 w-9 place-items-center rounded-full bg-accent text-accent-foreground text-sm font-semibold">
@@ -114,9 +115,13 @@ export function MembersList({ group, onlineMembers = [] }: { group: Group, onlin
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
                     <span className="truncate text-sm font-medium">{m.name}</span>
-                    {onlineMembers.includes(m.id) && (
-                      <span className="flex h-2 w-2 rounded-full bg-success ring-2 ring-background" title="Online" />
-                    )}
+                    <span
+                      className={`flex h-2 w-2 rounded-full ring-2 ring-background ${isOnline ? "bg-success" : "bg-muted-foreground/40"}`}
+                      title={isOnline ? "Active" : "Offline"}
+                    />
+                    <span className={`text-[10px] font-medium ${isOnline ? "text-success" : "text-muted-foreground"}`}>
+                      {isOnline ? "active" : "offline"}
+                    </span>
                     {isMe && <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-primary">you</span>}
                     {m.leaveRequested && <span className="rounded bg-warning/15 px-1.5 py-0.5 text-[10px] font-medium text-warning">leave requested</span>}
                   </div>

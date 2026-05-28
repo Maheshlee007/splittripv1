@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { db } from "@/lib/firebase";
 import { doc, setDoc, onSnapshot, deleteDoc, collection, getDocs, getDoc, Timestamp } from "firebase/firestore";
 import CryptoJS from "crypto-js";
@@ -58,9 +58,14 @@ export function useWebRTCSync(
   syncDisabled?: boolean
 ) {
   const [status, setStatus] = useState<SyncStatus>("idle");
-  const [onlineMembers, setOnlineMembers] = useState<string[]>([]);
+  const [rtcOnlineMembers, setRtcOnlineMembers] = useState<string[]>([]);
+  const [signalOnlineMembers, setSignalOnlineMembers] = useState<string[]>([]);
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const onlineMembers = useMemo(
+    () => Array.from(new Set([...signalOnlineMembers, ...rtcOnlineMembers])),
+    [signalOnlineMembers, rtcOnlineMembers]
+  );
 
   const pcsRef = useRef<Map<string, RTCPeerConnection>>(new Map());
   const dcsRef = useRef<Map<string, RTCDataChannel>>(new Map());
@@ -75,6 +80,8 @@ export function useWebRTCSync(
   const autoReconnectCountRef = useRef(0);
   const unsubscribeRef = useRef<(() => void) | null>(null);
   const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const presenceHeartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const presenceUnsubscribeRef = useRef<(() => void) | null>(null);
   const destroyedRef = useRef(false);
   const heartbeatResetRef = useRef<(() => void) | null>(null);
   const peerLastSeenRef = useRef<Map<string, number>>(new Map());
@@ -104,7 +111,7 @@ export function useWebRTCSync(
     processingPeersRef.current.clear();
     lastProcessedSdpRef.current.clear();
     peerLastSeenRef.current.clear();
-    setOnlineMembers([]);
+    setRtcOnlineMembers([]);
     stopHeartbeat();
     cleanupFirebase();
   }, [stopHeartbeat, cleanupFirebase]);
@@ -133,10 +140,96 @@ export function useWebRTCSync(
       })
       .map(([id]) => id);
     const online = [memberId, ...activeIds];
-    setOnlineMembers(online);
+    setRtcOnlineMembers(online);
     if (online.length > 1) setStatus("connected");
     broadcastPresence(online);
   }, [isHost, memberId, broadcastPresence]);
+
+  useEffect(() => {
+    if (!tripId || !memberId || syncDisabled) {
+      setSignalOnlineMembers([]);
+      return;
+    }
+
+    const presenceDocRef = doc(db, "trips", tripId, "presence", memberId);
+    const presenceColRef = collection(db, "trips", tripId, "presence");
+
+    const stopPresenceHeartbeat = () => {
+      if (presenceHeartbeatRef.current) {
+        clearInterval(presenceHeartbeatRef.current);
+        presenceHeartbeatRef.current = null;
+      }
+    };
+
+    const publishPresence = async () => {
+      try {
+        await setDoc(presenceDocRef, {
+          memberId,
+          screen: "group",
+          updatedAt: Timestamp.fromMillis(Date.now()),
+        }, { merge: true });
+      } catch {}
+    };
+
+    const startPresenceHeartbeat = () => {
+      stopPresenceHeartbeat();
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+      void publishPresence();
+      presenceHeartbeatRef.current = setInterval(() => {
+        if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+        void publishPresence();
+      }, HEARTBEAT_INTERVAL);
+    };
+
+    const unsubscribe = onSnapshot(presenceColRef, (snapshot) => {
+      const now = Date.now();
+      const active = snapshot.docs
+        .filter((docSnap) => {
+          const updatedAt = docSnap.data()?.updatedAt;
+          const updatedMs = updatedAt instanceof Timestamp
+            ? updatedAt.toMillis()
+            : typeof updatedAt === "number"
+              ? updatedAt
+              : 0;
+          return now - updatedMs <= PRESENCE_STALE_TIMEOUT;
+        })
+        .map((docSnap) => docSnap.id);
+
+      setSignalOnlineMembers(active);
+    }, () => {
+      setSignalOnlineMembers([]);
+    });
+
+    presenceUnsubscribeRef.current = unsubscribe;
+    startPresenceHeartbeat();
+
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        startPresenceHeartbeat();
+        return;
+      }
+      stopPresenceHeartbeat();
+    };
+
+    const handlePageHide = () => {
+      void deleteDoc(presenceDocRef).catch(() => {});
+    };
+
+    document.addEventListener("visibilitychange", handleVisibility);
+    window.addEventListener("pagehide", handlePageHide);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibility);
+      window.removeEventListener("pagehide", handlePageHide);
+      stopPresenceHeartbeat();
+      if (presenceUnsubscribeRef.current) {
+        presenceUnsubscribeRef.current();
+        presenceUnsubscribeRef.current = null;
+      }
+      setSignalOnlineMembers([]);
+      void deleteDoc(presenceDocRef).catch(() => {});
+    };
+  }, [tripId, memberId, syncDisabled]);
 
   const startHostHeartbeat = useCallback(() => {
     stopHeartbeat();
@@ -186,7 +279,7 @@ export function useWebRTCSync(
       } else if (data?.type === "trip_ended") {
         if (tripId) onTripEndedRef.current(tripId);
       } else if (data?.type === "presence" && Array.isArray(data.members)) {
-        setOnlineMembers(data.members);
+        setRtcOnlineMembers(data.members);
       } else if (data?.type === "heartbeat") {
         // Member received heartbeat from host — reset timeout
         if (heartbeatResetRef.current) heartbeatResetRef.current();
@@ -449,7 +542,7 @@ export function useWebRTCSync(
     dc.onclose = () => {
       if (destroyedRef.current) return;
       log("Member: DC CLOSED");
-      setOnlineMembers([]);
+      setRtcOnlineMembers([]);
       stopHeartbeat();
       handleConnectionDrop();
     };
@@ -537,9 +630,12 @@ export function useWebRTCSync(
   const disconnectAndLeave = useCallback(async () => {
     disconnectAll();
     if (!tripId || !memberId) return;
+    try { await deleteDoc(doc(db, "trips", tripId, "presence", memberId)); } catch {}
     if (isHost) {
       const peersCol = collection(db, "trips", tripId, "peers");
+      const presenceCol = collection(db, "trips", tripId, "presence");
       try { const snap = await getDocs(peersCol); await Promise.all(snap.docs.map(d => deleteDoc(d.ref))); } catch {}
+      try { const snap = await getDocs(presenceCol); await Promise.all(snap.docs.map(d => deleteDoc(d.ref))); } catch {}
       try { await deleteDoc(doc(db, "trips", tripId)); } catch {}
     } else {
       try { await deleteDoc(doc(db, "trips", tripId, "peers", memberId)); } catch {}
