@@ -115,13 +115,23 @@ export function MembersList({ group, onlineMembers = [] }: { group: Group, onlin
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
                     <span className="truncate text-sm font-medium">{m.name}</span>
-                    <span
-                      className={`flex h-2 w-2 rounded-full ring-2 ring-background ${isOnline ? "bg-success" : "bg-muted-foreground/40"}`}
-                      title={isOnline ? "Active" : "Offline"}
-                    />
-                    <span className={`text-[10px] font-medium ${isOnline ? "text-success" : "text-muted-foreground"}`}>
-                      {isOnline ? "active" : "offline"}
-                    </span>
+                    {isOnline ? (
+                      <>
+                        <span
+                          className="flex h-2 w-2 rounded-full ring-2 ring-background bg-success animate-pulse"
+                          title="Online"
+                        />
+                        <span className="text-[10px] font-medium text-success">online</span>
+                      </>
+                    ) : (
+                      <>
+                        <span
+                          className="flex h-2 w-2 rounded-full ring-2 ring-background bg-muted-foreground/40"
+                          title="Offline"
+                        />
+                        <span className="text-[10px] font-medium text-muted-foreground">offline</span>
+                      </>
+                    )}
                     {isMe && <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-primary">you</span>}
                     {m.leaveRequested && <span className="rounded bg-warning/15 px-1.5 py-0.5 text-[10px] font-medium text-warning">leave requested</span>}
                   </div>

@@ -45,6 +45,8 @@ export function computeBalances(group: Group): Record<string, number> {
   for (const m of group.members) net[m.id] = 0;
 
   for (const e of group.expenses) {
+    // Skip advance payments in balance calculation (shown separately)
+    if (e.isAdvance) continue;
     if (!net[e.paidBy] && net[e.paidBy] !== 0) net[e.paidBy] = 0;
     net[e.paidBy] += e.amount;
     for (const s of e.splits) {
@@ -91,6 +93,8 @@ export function buildMemberLedger(group: Group): MemberLedgerRow[] {
   );
 
   for (const e of group.expenses) {
+    // Skip advance payments in "paid" calculation (shown separately in dashboard)
+    if (e.isAdvance) continue;
     if (!rows[e.paidBy]) rows[e.paidBy] = { memberId: e.paidBy, name: group.members.find((m) => m.id === e.paidBy)?.name ?? "Unknown", paid: 0, owed: 0, balance: 0, settled: 0, finalBalance: 0 };
     rows[e.paidBy].paid += e.amount;
     for (const s of e.splits) {

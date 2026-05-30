@@ -91,7 +91,7 @@ function buildPDF(g: Group): jsPDF {
           fmtMoney(r.total, g.currency),
           ...active.map((m) => {
             const v = r.shares[m.id];
-            return v ? fmtMoney(v, g.currency) : "-";
+            return v ? fmtMoney(v, g.currency).replace(/^¹/, "") : "-";
           }),
         ]),
         // Summary rows
@@ -105,6 +105,7 @@ function buildPDF(g: Group): jsPDF {
       styles: { fontSize: useLandscape ? 7 : 8, cellPadding: 2 },
       headStyles: { fillColor: [249, 115, 22], fontSize: useLandscape ? 6 : 7 },
       columnStyles: { 0: { cellWidth: useLandscape ? 20 : 22 }, 1: { cellWidth: useLandscape ? 34 : 40 } },
+      margin: { left: 10, right: 10, top: 5, bottom: 5 },
     });
   }
 

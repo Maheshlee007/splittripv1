@@ -325,7 +325,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
   const importGroup = useCallback((g: Group) => {
     setGroups((curr) => {
       const i = curr.findIndex((x) => x.id === g.id);
-      const merged = ensureMe(g, profile);
+      const merged = ensureMe({ ...g, archived: true, archivedAt: Date.now() }, profile);
       saveGroup(merged);
       if (broadcasterRef.current) broadcasterRef.current(merged);
       if (i === -1) return [...curr, merged];

@@ -191,7 +191,7 @@ export default function GroupPage() {
                 <DropdownMenuItem onClick={() => setPreview("whatsapp")}>
                   <MessageCircle className="h-4 w-4" /> WhatsApp text <Eye className="ml-auto h-3.5 w-3.5 text-muted-foreground" />
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setPreview("image")}><ImageIcon className="h-4 w-4" /> Dashboard image <Eye className="ml-auto h-3.5 w-3.5 text-muted-foreground" /></DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setPreview("image")}><ImageIcon className="h-4 w-4" /> Preview image <Eye className="ml-auto h-3.5 w-3.5 text-muted-foreground" /></DropdownMenuItem>
                 {role === "owner" && (
                   <>
                     <DropdownMenuSeparator />

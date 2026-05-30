@@ -227,8 +227,11 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
                   onChange={(e) => {
                     setIsAdvance(e.target.checked);
                     if (e.target.checked) {
-                      // Auto-set paidBy to organizer (first member / current user)
+                      // Auto-select advance category
+                      setCategory("advance");
                       if (!note.trim()) setNote("Advance collection");
+                      // Auto-select all participants as paid initially
+                      setAdvancePaid(new Set(participants));
                     } else {
                       if (note === "Advance collection") setNote("");
                       setAdvancePaid(new Set());
@@ -393,10 +396,24 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
                 <div className="mt-3 rounded-xl border border-success/30 bg-success/5 p-3">
                   <div className="flex items-center gap-2 mb-2">
                     <Banknote className="h-4 w-4 text-success" />
-                    <span className="text-xs font-semibold">Who has paid their advance?</span>
+                    <span className="text-xs font-semibold">Advance paid by</span>
                     <span className="ml-auto text-[10px] text-muted-foreground">
-                      {advancePaid.size}/{participants.size} collected
+                      {advancePaid.size}/{participants.size}
                     </span>
+                  </div>
+                  <div className="flex gap-1 mb-2">
+                    <button
+                      onClick={() => setAdvancePaid(new Set([...participants]))}
+                      className="flex-1 rounded-md bg-success/20 px-2 py-1 text-[10px] font-medium text-success hover:bg-success/30 transition"
+                    >
+                      All
+                    </button>
+                    <button
+                      onClick={() => setAdvancePaid(new Set())}
+                      className="flex-1 rounded-md bg-destructive/20 px-2 py-1 text-[10px] font-medium text-destructive hover:bg-destructive/30 transition"
+                    >
+                      None
+                    </button>
                   </div>
                   <div className="space-y-1 max-h-40 overflow-y-auto">
                     {group.members.filter(m => participants.has(m.id)).map((m) => {
