@@ -66,7 +66,7 @@ function defaultProfile(): Profile {
 }
 
 function activity(profile: Profile, type: ActivityItem["type"], message: string): ActivityItem {
-  return { id: nanoid(), type, actorId: profile.id, actorName: profile.name || "Me", message, createdAt: Date.now() };
+  return { id: nanoid(), type, actorId: profile.id, actorName: profile.name || "Member", message, createdAt: Date.now() };
 }
 
 function withActivity(g: Group, item: ActivityItem): Group {
@@ -84,7 +84,7 @@ function ensureMe(group: Group, profile: Profile): Group {
       ...group.members,
       {
         id: profile.id,
-        name: profile.name || "Me",
+        name: profile.name || "Member",
         upiId: profile.upiId,
         phone: profile.phone,
         role,
@@ -265,7 +265,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
         inviteToken: nanoid(22),
         members: [{
           id: profile.id,
-          name: profile.name || "Me",
+          name: profile.name || "Member",
           upiId: profile.upiId,
           phone: profile.phone,
           role: "owner",
@@ -304,7 +304,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
         inviteToken,
         members: [{
           id: profile.id,
-          name: profile.name || "Me",
+          name: profile.name || "Member",
           upiId: profile.upiId,
           phone: profile.phone,
           role: "member",
@@ -708,10 +708,10 @@ function mergeGroups(a: Group, b: Group): Group {
   const pickMemberName = (localName: string | undefined, remoteName: string | undefined) => {
     const local = (localName ?? "").trim();
     const remote = (remoteName ?? "").trim();
-    const localIsPlaceholder = !local || local.toLowerCase() === "me";
-    const remoteIsPlaceholder = !remote || remote.toLowerCase() === "me";
+    const localIsPlaceholder = !local || local.toLowerCase() === "me" || local.toLowerCase() === "member";
+    const remoteIsPlaceholder = !remote || remote.toLowerCase() === "me" || remote.toLowerCase() === "member";
     if (localIsPlaceholder && !remoteIsPlaceholder) return remote;
-    return local || remote || "Me";
+    return local || remote || "Member";
   };
   const merged: Group = {
     ...a,
@@ -753,7 +753,7 @@ function sanitizeIncomingForProfile(incoming: Group, local: Group | undefined, p
   const approved = iAmOwner || localMe?.status === "active" || incomingMe?.status === "active";
   if (approved) return incoming;
   const owner = incoming.members.find((m) => m.id === incoming.ownerId);
-  const me = incomingMe ?? localMe ?? { id: profile.id, name: profile.name || "Me", role: "member" as const, status: "pending" as const, upiId: profile.upiId, phone: profile.phone };
+  const me = incomingMe ?? localMe ?? { id: profile.id, name: profile.name || "Member", role: "member" as const, status: "pending" as const, upiId: profile.upiId, phone: profile.phone };
   return {
     ...incoming,
     name: local?.name || incoming.name,

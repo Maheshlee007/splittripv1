@@ -12,6 +12,15 @@ export const DashboardView = forwardRef<HTMLDivElement, { group: Group }>(({ gro
 
   const rows = useMemo(() => buildExpenseBreakdownRows(group), [group]);
   const ledger = useMemo(() => buildMemberLedger(group), [group]);
+  const nonAdvanceSpentByMember = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const m of activeMembers) map[m.id] = 0;
+    for (const e of group.expenses) {
+      if (e.isAdvance) continue;
+      map[e.paidBy] = (map[e.paidBy] ?? 0) + e.amount;
+    }
+    return map;
+  }, [group.expenses, activeMembers]);
   const advanceByMember = useMemo(() => {
     const paidMap: Record<string, number> = {};
     const unpaidMap: Record<string, boolean> = {};
@@ -123,7 +132,7 @@ export const DashboardView = forwardRef<HTMLDivElement, { group: Group }>(({ gro
                 <tr className="border-t border-border bg-secondary/30 font-semibold">
                   <td colSpan={2} className="px-2 py-2 text-right">Individual spent</td>
                   <td />
-                  {activeMembers.map((m) => <td key={m.id} className="px-2 py-2 text-right tabular-nums text-success">+{fmtMoney(ledger.find((r) => r.memberId === m.id)?.paid ?? 0, group.currency)}</td>)}
+                  {activeMembers.map((m) => <td key={m.id} className="px-2 py-2 text-right tabular-nums text-success">+{fmtMoney(nonAdvanceSpentByMember[m.id] ?? 0, group.currency)}</td>)}
                 </tr>
                 <tr className="border-t border-border bg-secondary/40 font-semibold">
                   <td colSpan={2} className="px-2 py-2 text-right">Total advance</td>
