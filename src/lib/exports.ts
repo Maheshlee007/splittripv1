@@ -7,12 +7,72 @@ import { buildExpenseBreakdownRows, buildMemberLedger, computeShareAmount, total
 import { fmtDate, fmtMoney } from "./format";
 import { getCategory } from "./categories";
 
+interface ExportMetrics {
+  active: Group["members"];
+  rows: ReturnType<typeof buildExpenseBreakdownRows>;
+  ledger: ReturnType<typeof buildMemberLedger>;
+  nonAdvanceSpentByMember: Record<string, number>;
+  advanceByMember: {
+    paidMap: Record<string, number>;
+    unpaidMap: Record<string, boolean>;
+    ownerExtraMap: Record<string, number>;
+  };
+  advanceExpenses: Group["expenses"];
+}
+
+function getExportMetrics(g: Group): ExportMetrics {
+  const active = g.members.filter((m) => m.status !== "pending");
+  const rows = buildExpenseBreakdownRows(g);
+  const ledger = buildMemberLedger(g);
+
+  const nonAdvanceSpentByMember: Record<string, number> = {};
+  for (const m of active) nonAdvanceSpentByMember[m.id] = 0;
+  for (const e of g.expenses) {
+    if (e.isAdvance) continue;
+    nonAdvanceSpentByMember[e.paidBy] = (nonAdvanceSpentByMember[e.paidBy] ?? 0) + e.amount;
+  }
+
+  const paidMap: Record<string, number> = {};
+  const unpaidMap: Record<string, boolean> = {};
+  const ownerExtraMap: Record<string, number> = {};
+  for (const m of active) {
+    paidMap[m.id] = 0;
+    unpaidMap[m.id] = false;
+    ownerExtraMap[m.id] = 0;
+  }
+  const advanceExpenses = g.expenses.filter((x) => x.isAdvance);
+  for (const e of advanceExpenses) {
+    let collected = 0;
+    for (const s of e.splits) {
+      const share = computeShareAmount(e.amount, e.splitMode, e.splits, s.memberId);
+      const paidEntry = e.advancePayments?.find((a) => a.memberId === s.memberId);
+      if (paidEntry?.hasPaid) {
+        paidMap[s.memberId] = (paidMap[s.memberId] ?? 0) + share;
+        collected += share;
+      } else {
+        unpaidMap[s.memberId] = true;
+      }
+    }
+    ownerExtraMap[e.paidBy] = (ownerExtraMap[e.paidBy] ?? 0) + Math.max(0, e.amount - collected);
+  }
+
+  return {
+    active,
+    rows,
+    ledger,
+    nonAdvanceSpentByMember,
+    advanceByMember: { paidMap, unpaidMap, ownerExtraMap },
+    advanceExpenses,
+  };
+}
+
 function memberName(g: Group, id: string) {
   return g.members.find((m) => m.id === id)?.name ?? "?";
 }
 
 export function exportExcel(g: Group): void {
   const wb = XLSX.utils.book_new();
+  const metrics = getExportMetrics(g);
 
   const summary = [
     ["Trip", g.name],
@@ -38,18 +98,52 @@ export function exportExcel(g: Group): void {
   ];
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(expRows), "Expenses");
 
-  const ledger = buildMemberLedger(g);
+  const ledger = metrics.ledger;
   const balRows = [["Member", "Individual spent", "Share", "Balance", `Final (${g.currency})`], ...ledger.map((r) => [r.name, r.paid, r.owed, r.balance, r.finalBalance])];
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(balRows), "Balances");
 
-  const active = g.members.filter((m) => m.status !== "pending");
+  const active = metrics.active;
   const matrix = [["Date", "Category / desc", `Total (${g.currency})`, ...active.map((m) => m.name)],
-    ...buildExpenseBreakdownRows(g).map((r) => [fmtDate(r.date), `${getCategory(r.category).label} - ${r.description}`, r.total, ...active.map((m) => r.shares[m.id] ?? 0)]),
+    ...metrics.rows.map((r) => [fmtDate(r.date), `${getCategory(r.category).label} - ${r.description}`, r.total, ...active.map((m) => r.shares[m.id] ?? 0)]),
     ["", "Spent per person", totalSpent(g), ...active.map((m) => -(ledger.find((r) => r.memberId === m.id)?.owed ?? 0))],
-    ["", "Individual spent", "", ...active.map((m) => ledger.find((r) => r.memberId === m.id)?.paid ?? 0)],
+    ["", "Individual spent", "", ...active.map((m) => metrics.nonAdvanceSpentByMember[m.id] ?? 0)],
+    ["", "Total advance", "", ...active.map((m) => {
+      const paid = metrics.advanceByMember.paidMap[m.id] ?? 0;
+      const unpaid = metrics.advanceByMember.unpaidMap[m.id] ?? false;
+      const extra = metrics.advanceByMember.ownerExtraMap[m.id] ?? 0;
+      if (paid > 0 && extra > 0) return `${paid.toFixed(2)} (extra ${extra.toFixed(2)})`;
+      if (paid > 0) return paid;
+      if (unpaid) return "Not paid";
+      return "-";
+    })],
     ["", "Balances", "", ...active.map((m) => ledger.find((r) => r.memberId === m.id)?.finalBalance ?? 0)],
   ];
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(matrix), "Trip breakdown");
+
+  if (metrics.advanceExpenses.length) {
+    const advanceRows = [["Description", "Date", `Total (${g.currency})`, "Collected", "Pending", "Paid by", "Per-member status"]];
+    for (const e of metrics.advanceExpenses) {
+      const collectedCount = e.advancePayments?.filter((a) => a.hasPaid).length ?? 0;
+      const totalCount = e.advancePayments?.length ?? e.splits.length;
+      const status = e.splits
+        .map((s) => {
+          const share = computeShareAmount(e.amount, e.splitMode, e.splits, s.memberId);
+          const ap = e.advancePayments?.find((a) => a.memberId === s.memberId);
+          return `${memberName(g, s.memberId)}:${ap?.hasPaid ? `Paid ${share.toFixed(2)}` : "Not paid"}`;
+        })
+        .join("; ");
+      advanceRows.push([
+        e.description,
+        fmtDate(e.createdAt),
+        String(e.amount),
+        `${collectedCount}/${totalCount}`,
+        `${Math.max(totalCount - collectedCount, 0)}`,
+        memberName(g, e.paidBy),
+        status,
+      ]);
+    }
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(advanceRows), "Advance payments");
+  }
 
   XLSX.writeFile(wb, `${g.name.replace(/[^\w]+/g, "_")}_${g.id}.xlsx`);
 }
@@ -62,12 +156,13 @@ function abbreviateName(name: string, maxLen = 10): string {
 }
 
 function buildPDF(g: Group): jsPDF {
-  const active = g.members.filter((m) => m.status !== "pending");
+  const metrics = getExportMetrics(g);
+  const active = metrics.active;
   const useLandscape = active.length > 5;
   const doc = new jsPDF({ orientation: useLandscape ? "landscape" : "portrait" });
   const nameMaxLen = useLandscape ? 8 : 14;
-  const ledger = buildMemberLedger(g);
-  const rows = buildExpenseBreakdownRows(g);
+  const ledger = metrics.ledger;
+  const rows = metrics.rows;
 
   // Header
   doc.setFontSize(18);
@@ -95,8 +190,17 @@ function buildPDF(g: Group): jsPDF {
           }),
         ]),
         // Summary rows
-        ["", "Share per person", fmtMoney(totalSpent(g), g.currency), ...active.map((m) => fmtMoney(ledger.find((r) => r.memberId === m.id)?.owed ?? 0, g.currency))],
-        ["", "Individual spent", "", ...active.map((m) => fmtMoney(ledger.find((r) => r.memberId === m.id)?.paid ?? 0, g.currency))],
+        ["", "Spent per person", fmtMoney(totalSpent(g), g.currency), ...active.map((m) => `-${fmtMoney(ledger.find((r) => r.memberId === m.id)?.owed ?? 0, g.currency)}`)],
+        ["", "Individual spent", "", ...active.map((m) => `+${fmtMoney(metrics.nonAdvanceSpentByMember[m.id] ?? 0, g.currency)}`)],
+        ["", "Total advance", "", ...active.map((m) => {
+          const paid = metrics.advanceByMember.paidMap[m.id] ?? 0;
+          const unpaid = metrics.advanceByMember.unpaidMap[m.id] ?? false;
+          const extra = metrics.advanceByMember.ownerExtraMap[m.id] ?? 0;
+          if (paid > 0 && extra > 0) return `+${fmtMoney(paid, g.currency)} (extra ${fmtMoney(extra, g.currency)})`;
+          if (paid > 0) return `+${fmtMoney(paid, g.currency)}`;
+          if (unpaid) return "Not paid";
+          return "-";
+        })],
         ["", "Balance", "", ...active.map((m) => {
           const bal = ledger.find((r) => r.memberId === m.id)?.finalBalance ?? 0;
           return `${bal > 0 ? "+" : ""}${fmtMoney(bal, g.currency)}`;
@@ -140,6 +244,30 @@ function buildPDF(g: Group): jsPDF {
       headStyles: { fillColor: [59, 130, 246] },
     });
   }
+
+  if (metrics.advanceExpenses.length) {
+    const currentY = (doc as any).lastAutoTable?.finalY ?? lastY + 20;
+    doc.setFontSize(12);
+    doc.text("Advance Payments", 14, currentY + 10);
+    autoTable(doc, {
+      startY: currentY + 14,
+      head: [["Description", `Total (${g.currency})`, ...active.map((m) => abbreviateName(m.name, nameMaxLen))]],
+      body: metrics.advanceExpenses.map((e) => [
+        e.description,
+        fmtMoney(e.amount, g.currency),
+        ...active.map((m) => {
+          const inSplit = e.splits.some((s) => s.memberId === m.id);
+          if (!inSplit) return "-";
+          const share = computeShareAmount(e.amount, e.splitMode, e.splits, m.id);
+          const ap = e.advancePayments?.find((a) => a.memberId === m.id);
+          return ap?.hasPaid ? `Paid ${fmtMoney(share, g.currency)}` : "Not paid";
+        }),
+      ]),
+      styles: { fontSize: useLandscape ? 7 : 8, cellPadding: 1.5 },
+      headStyles: { fillColor: [34, 197, 94], fontSize: useLandscape ? 6 : 7 },
+      margin: { left: 10, right: 10, top: 5, bottom: 5 },
+    });
+  }
   return doc;
 }
 
@@ -153,22 +281,98 @@ export function buildPDFBlobUrl(g: Group): string {
 }
 
 export function buildJSONString(g: Group): string {
-  return JSON.stringify(g, null, 2);
+  const metrics = getExportMetrics(g);
+  const payload = {
+    generatedAt: new Date().toISOString(),
+    trip: {
+      id: g.id,
+      name: g.name,
+      emoji: g.emoji,
+      currency: g.currency,
+      members: metrics.active.map((m) => ({ id: m.id, name: m.name })),
+      totalSpent: totalSpent(g),
+    },
+    breakdown: {
+      spentPerPerson: Object.fromEntries(metrics.active.map((m) => [m.id, ledgerValue(metrics.ledger, m.id, "owed")])),
+      individualSpent: Object.fromEntries(metrics.active.map((m) => [m.id, metrics.nonAdvanceSpentByMember[m.id] ?? 0])),
+      totalAdvance: Object.fromEntries(metrics.active.map((m) => {
+        const paid = metrics.advanceByMember.paidMap[m.id] ?? 0;
+        const unpaid = metrics.advanceByMember.unpaidMap[m.id] ?? false;
+        const extra = metrics.advanceByMember.ownerExtraMap[m.id] ?? 0;
+        return [m.id, { paid, unpaid, extra }];
+      })),
+      balances: Object.fromEntries(metrics.active.map((m) => [m.id, ledgerValue(metrics.ledger, m.id, "finalBalance")])),
+    },
+    advancePayments: metrics.advanceExpenses.map((e) => ({
+      description: e.description,
+      total: e.amount,
+      paidBy: memberName(g, e.paidBy),
+      members: e.splits.map((s) => {
+        const share = computeShareAmount(e.amount, e.splitMode, e.splits, s.memberId);
+        const ap = e.advancePayments?.find((a) => a.memberId === s.memberId);
+        return {
+          memberId: s.memberId,
+          memberName: memberName(g, s.memberId),
+          share,
+          hasPaid: !!ap?.hasPaid,
+        };
+      }),
+    })),
+  };
+  return JSON.stringify(payload, null, 2);
+}
+
+function ledgerValue(
+  ledger: ReturnType<typeof buildMemberLedger>,
+  memberId: string,
+  key: "owed" | "finalBalance"
+): number {
+  return ledger.find((r) => r.memberId === memberId)?.[key] ?? 0;
 }
 
 export function buildWhatsAppText(g: Group): string {
-  const ledger = buildMemberLedger(g);
+  const metrics = getExportMetrics(g);
+  const ledger = metrics.ledger;
   const owner = g.members.find((m) => m.id === g.ownerId) ?? g.members[0];
   const lines: string[] = [];
   lines.push(`*${g.emoji} ${g.name}* (code ${g.id})`);
   lines.push(`Total spent: ${fmtMoney(totalSpent(g), g.currency)}`);
   lines.push("");
-  lines.push("*Balances*");
+  lines.push("*Trip breakdown* (same as dashboard)");
+  for (const m of metrics.active) {
+    const owed = ledger.find((r) => r.memberId === m.id)?.owed ?? 0;
+    const finalBalance = ledger.find((r) => r.memberId === m.id)?.finalBalance ?? 0;
+    const individual = metrics.nonAdvanceSpentByMember[m.id] ?? 0;
+    const advPaid = metrics.advanceByMember.paidMap[m.id] ?? 0;
+    const advExtra = metrics.advanceByMember.ownerExtraMap[m.id] ?? 0;
+    const advUnpaid = metrics.advanceByMember.unpaidMap[m.id] ?? false;
+    const advText = advPaid > 0
+      ? `+${fmtMoney(advPaid, g.currency)}${advExtra > 0 ? ` (extra ${fmtMoney(advExtra, g.currency)})` : ""}`
+      : advUnpaid
+      ? "Not paid"
+      : "-";
+    lines.push(`• ${m.name}: Spent/person -${fmtMoney(owed, g.currency)}, Individual +${fmtMoney(individual, g.currency)}, Advance ${advText}, Balance ${finalBalance >= 0 ? "+" : "-"}${fmtMoney(Math.abs(finalBalance), g.currency)}`);
+  }
+
+  if (metrics.advanceExpenses.length) {
+    lines.push("", "*Advance payments*");
+    for (const e of metrics.advanceExpenses) {
+      lines.push(`• ${e.description} (${fmtMoney(e.amount, g.currency)})`);
+      for (const s of e.splits) {
+        const share = computeShareAmount(e.amount, e.splitMode, e.splits, s.memberId);
+        const ap = e.advancePayments?.find((a) => a.memberId === s.memberId);
+        lines.push(`  - ${memberName(g, s.memberId)}: ${ap?.hasPaid ? `Paid ${fmtMoney(share, g.currency)}` : "Not paid"}`);
+      }
+    }
+  }
+
+  lines.push("", "*Balances summary*");
   for (const r of ledger) {
     const v = r.finalBalance;
-    if (Math.abs(v) < 0.01) lines.push(`• ${r.name}: settled (spent ${fmtMoney(r.paid, g.currency)}, share ${fmtMoney(r.owed, g.currency)})`);
-    else lines.push(`• ${r.name}: ${v > 0 ? "+" : "-"}${fmtMoney(Math.abs(v), g.currency)} (spent ${fmtMoney(r.paid, g.currency)}, share ${fmtMoney(r.owed, g.currency)})`);
+    if (Math.abs(v) < 0.01) lines.push(`• ${r.name}: settled`);
+    else lines.push(`• ${r.name}: ${v > 0 ? "+" : "-"}${fmtMoney(Math.abs(v), g.currency)}`);
   }
+
   const payOwner = ledger.filter((r) => r.memberId !== owner?.id && r.finalBalance < -0.01);
   const ownerPays = ledger.filter((r) => r.memberId !== owner?.id && r.finalBalance > 0.01);
   if (payOwner.length) {

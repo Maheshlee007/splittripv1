@@ -279,6 +279,8 @@ export default function AppShell() {
             <ThemeToggle compact={collapsed} />
             {!collapsed && <span className="ml-2 text-[11px] text-muted-foreground">Theme</span>}
           </div>
+          
+          <div className={cn("flex items-center", collapsed ? "justify-center flex-col" : "px-1 justify-between")}>
           {/* Install App */}
           {!isStandalone && canInstall && (
             <button
@@ -302,6 +304,7 @@ export default function AppShell() {
           >
             {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
           </Button>
+          </div>
         </div>
       </aside>
 

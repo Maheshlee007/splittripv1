@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Group } from "@/lib/types";
-import { exportExcel, exportJSON, exportPDF, buildWhatsAppText, shareWhatsApp, exportImage, buildPDFBlobUrl, buildJSONString } from "@/lib/exports";
+import { exportPDF, buildWhatsAppText, shareWhatsApp, buildPDFBlobUrl, buildJSONString } from "@/lib/exports";
 import { Download, Share2, Copy ,BarChart3 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -67,6 +67,36 @@ export function ExportPreview({
     toast.success("Copied");
   };
 
+  const downloadJsonReport = () => {
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${group.name.replace(/[^\w]+/g, "_")}_${group.id}_report.json`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  const shareImagePreview = async () => {
+    if (!imgUrl) return;
+    try {
+      const res = await fetch(imgUrl);
+      const blob = await res.blob();
+      const file = new File([blob], `${group.name.replace(/[^\w]+/g, "_")}_dashboard.png`, { type: "image/png" });
+      if (navigator.share && navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ title: `${group.name} trip breakdown`, files: [file] });
+        return;
+      }
+    } catch {
+      // fall through to download fallback
+    }
+    const a = document.createElement("a");
+    a.href = imgUrl;
+    a.download = `${group.name}_dashboard.png`;
+    a.click();
+    toast.success("Share not available on this device. Downloaded instead.");
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[calc(100vw-1.5rem)] max-w-3xl max-h-[92vh] overflow-hidden p-3 sm:p-5">
@@ -93,7 +123,7 @@ export function ExportPreview({
             </>
           )}
           {kind === "image" && (
-            imgUrl ? <img src={imgUrl} alt="preview" className="block max-w-full" /> :
+            imgUrl ? <img src={imgUrl} alt="preview" className="block max-w-full cursor-pointer" onClick={shareImagePreview} title="Tap to share image" /> :
             <div className=" h-48  text-sm text-muted-foreground flex items-center justify-center">Rendering….<br/> If not showed Click on Bar icon  and Try Again.<BarChart3 className=" h-4 w-4 text-white" /> </div>
              
           )}
@@ -117,16 +147,19 @@ export function ExportPreview({
           {kind === "json" && (
             <>
               <Button variant="secondary" size="sm" onClick={() => copyText(json)}><Copy className="h-4 w-4" /> Copy</Button>
-              <Button size="sm" onClick={() => exportJSON(group)}><Download className="h-4 w-4" /> Download</Button>
+              <Button size="sm" onClick={downloadJsonReport}><Download className="h-4 w-4" /> Download</Button>
             </>
           )}
           {kind === "pdf" && (
             <Button size="sm" onClick={() => exportPDF(group)}><Download className="h-4 w-4" /> Download PDF</Button>
           )}
           {kind === "image" && imgUrl && (
-            <Button size="sm" onClick={() => {
-              const a = document.createElement("a"); a.href = imgUrl; a.download = `${group.name}_dashboard.png`; a.click();
-            }}><Download className="h-4 w-4" /> Download PNG</Button>
+            <>
+              <Button variant="secondary" size="sm" onClick={shareImagePreview}><Share2 className="h-4 w-4" /> Share PNG</Button>
+              <Button size="sm" onClick={() => {
+                const a = document.createElement("a"); a.href = imgUrl; a.download = `${group.name}_dashboard.png`; a.click();
+              }}><Download className="h-4 w-4" /> Download PNG</Button>
+            </>
           )}
         </div>
       </DialogContent>
