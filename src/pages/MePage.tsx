@@ -54,7 +54,8 @@ export default function MePage() {
     <>
       <PageHeader title="Me" subtitle="Your profile & preferences" />
       <div className="mx-auto max-w-5xl px-4 py-4 lg:grid lg:grid-cols-2 lg:gap-4 lg:items-start space-y-4 lg:space-y-0">
-        {/* Left column: Profile */}
+        {/* Left column: Profile + Lock */}
+        <div className="space-y-4">
         <section className="space-y-3 rounded-2xl border border-border bg-card p-4 shadow-card">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold">Profile</h3>
@@ -110,7 +111,10 @@ export default function MePage() {
           )}
         </section>
 
-        {/* Right column: Theme + Backup */}
+        <LockSection />
+        </div>
+
+        {/* Right column: Appearance + Backup + Help */}
         <div className="space-y-4">
         <section className="space-y-3 rounded-2xl border border-border bg-card p-4 shadow-card">
           <h3 className="text-sm font-semibold">Appearance</h3>
@@ -161,8 +165,6 @@ export default function MePage() {
         </section>
 
         <BackupSection />
-
-        <LockSection />
 
         <section className="space-y-2 rounded-2xl border border-border bg-card p-4 shadow-card">
           <h3 className="text-sm font-semibold">Help</h3>
