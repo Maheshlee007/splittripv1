@@ -20,6 +20,7 @@ import {
   type LockMode,
 } from "@/lib/app-lock";
 import { useAppLock } from "@/components/AppLock";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 
 export default function MePage() {
   const { profile, setProfileFields, themePref, setThemePref } = useApp();
@@ -245,6 +246,8 @@ function LockSection() {
   const [mode, setMode] = useState<LockMode | null>(() => getLockMode());
   const [bioSupported, setBioSupported] = useState(false);
   const [setupOpen, setSetupOpen] = useState(false);
+  const [disableOpen, setDisableOpen] = useState(false);
+  const [disablePin, setDisablePin] = useState("");
   const [pin, setPin] = useState("");
   const [pin2, setPin2] = useState("");
   const [busy, setBusy] = useState(false);
@@ -265,17 +268,39 @@ function LockSection() {
       if (mode === "biometric") {
         const ok = await verifyBiometric();
         if (!ok) { toast.error("Authentication failed"); return; }
-      } else if (mode === "passcode") {
-        const entered = window.prompt("Enter current passcode to disable lock:");
-        if (!entered) return;
-        const ok = await verifyPasscode(entered);
-        if (!ok) { toast.error("Incorrect passcode"); return; }
+        disableLock();
+        reload();
+        toast.success("App lock disabled");
+        return;
+      }
+      if (mode === "passcode") {
+        // Open custom dialog for consistent UI (no native browser prompt).
+        setDisablePin("");
+        setDisableOpen(true);
+        return;
       }
       disableLock();
       reload();
       toast.success("App lock disabled");
     } catch (e: any) {
       toast.error(e?.message || "Failed to disable lock");
+    }
+  };
+
+  const confirmDisableWithPasscode = async () => {
+    if (busy) return;
+    if (!/^\d{4,6}$/.test(disablePin)) { toast.error("Enter 4-6 digits"); return; }
+    setBusy(true);
+    try {
+      const ok = await verifyPasscode(disablePin);
+      if (!ok) { toast.error("Incorrect passcode"); setDisablePin(""); return; }
+      disableLock();
+      reload();
+      setDisableOpen(false);
+      setDisablePin("");
+      toast.success("App lock disabled");
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -376,6 +401,39 @@ function LockSection() {
           Biometric not available on this device — passcode only.
         </p>
       )}
+
+      {/* Custom passcode dialog for disabling lock (replaces window.prompt) */}
+      <Dialog open={disableOpen} onOpenChange={(v) => { if (!busy) { setDisableOpen(v); if (!v) setDisablePin(""); } }}>
+        <DialogContent className="w-[calc(100vw-2rem)] max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Lock className="h-4 w-4" /> Confirm passcode
+            </DialogTitle>
+            <DialogDescription>
+              Enter your current passcode to disable the app lock.
+            </DialogDescription>
+          </DialogHeader>
+          <Input
+            type="password"
+            inputMode="numeric"
+            autoFocus
+            maxLength={6}
+            value={disablePin}
+            onChange={(e) => setDisablePin(e.target.value.replace(/\D/g, "").slice(0, 6))}
+            onKeyDown={(e) => { if (e.key === "Enter") void confirmDisableWithPasscode(); }}
+            placeholder="••••"
+            className="text-center text-lg tracking-[0.6em]"
+          />
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button variant="ghost" onClick={() => { setDisableOpen(false); setDisablePin(""); }} disabled={busy}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={confirmDisableWithPasscode} disabled={busy || disablePin.length < 4}>
+              {busy ? "Verifying…" : "Disable lock"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }
