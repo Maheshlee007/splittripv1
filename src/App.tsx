@@ -7,6 +7,7 @@ import { AppStoreProvider } from "@/store/AppStore";
 import { ConfirmProvider } from "@/components/ConfirmDialog";
 import { ReloadPrompt } from "@/components/ReloadPrompt";
 import { InstallPromptToast } from "@/components/InstallPromptToast";
+import { AppLockProvider } from "@/components/AppLock";
 import AppShell from "@/components/AppShell";
 import TripsPage from "@/pages/TripsPage";
 import GroupPage from "@/pages/GroupPage";
@@ -29,6 +30,7 @@ const App = () => (
       <Sonner />
       <AppStoreProvider>
         <ConfirmProvider>
+          <AppLockProvider>
           <BrowserRouter>
             <Routes>
               <Route element={<AppShell />}>
@@ -52,6 +54,7 @@ const App = () => (
           </BrowserRouter>
           <ReloadPrompt />
           <InstallPromptToast />
+          </AppLockProvider>
         </ConfirmProvider>
       </AppStoreProvider>
     </TooltipProvider>

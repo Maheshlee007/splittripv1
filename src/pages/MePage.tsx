@@ -5,9 +5,21 @@ import { PageHeader } from "@/components/PageHeader";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Sun, Moon, Monitor, Pencil, User, Phone, AtSign, CheckCircle2, Download, Upload, ShieldAlert, BookOpen } from "lucide-react";
+import { Sun, Moon, Monitor, Pencil, User, Phone, AtSign, CheckCircle2, Download, Upload, ShieldAlert, BookOpen, Fingerprint, Lock, ShieldCheck } from "lucide-react";
 import { downloadBackup, restoreBackup } from "@/lib/backup";
 import { toast } from "sonner";
+import {
+  isLockEnabled,
+  getLockMode,
+  disableLock,
+  setPasscode,
+  registerBiometric,
+  isBiometricSupported,
+  verifyPasscode,
+  verifyBiometric,
+  type LockMode,
+} from "@/lib/app-lock";
+import { useAppLock } from "@/components/AppLock";
 
 export default function MePage() {
   const { profile, setProfileFields, themePref, setThemePref } = useApp();
@@ -150,6 +162,8 @@ export default function MePage() {
 
         <BackupSection />
 
+        <LockSection />
+
         <section className="space-y-2 rounded-2xl border border-border bg-card p-4 shadow-card">
           <h3 className="text-sm font-semibold">Help</h3>
           <p className="text-xs text-muted-foreground">Quick setup, peer connection flow, and troubleshooting.</p>
@@ -184,7 +198,11 @@ function BackupSection() {
     setBusy(true);
     try {
       const r = await restoreBackup(f);
-      toast.success(`Restored ${r.groups} trip${r.groups === 1 ? "" : "s"}. Refresh to see them.`);
+      const parts = [
+        `${r.groups} trip${r.groups === 1 ? "" : "s"}`,
+        `${r.personalExpenses} personal expense${r.personalExpenses === 1 ? "" : "s"}`,
+      ];
+      toast.success(`Restored ${parts.join(" + ")}. Refreshing…`);
       setTimeout(() => window.location.reload(), 1200);
     } catch (e: any) {
       toast.error(e?.message || "Restore failed");
@@ -215,6 +233,147 @@ function BackupSection() {
       <p className="text-[10px] text-muted-foreground">
         Backup includes your profile + every trip (members, expenses, requests, settlements, bill photos) + personal expenses.
       </p>
+    </section>
+  );
+}
+
+function LockSection() {
+  const { refresh } = useAppLock();
+  const [enabled, setEnabled] = useState<boolean>(() => isLockEnabled());
+  const [mode, setMode] = useState<LockMode | null>(() => getLockMode());
+  const [bioSupported, setBioSupported] = useState(false);
+  const [setupOpen, setSetupOpen] = useState(false);
+  const [pin, setPin] = useState("");
+  const [pin2, setPin2] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    isBiometricSupported().then(setBioSupported);
+  }, []);
+
+  const reload = () => {
+    setEnabled(isLockEnabled());
+    setMode(getLockMode());
+    refresh();
+  };
+
+  const handleDisable = async () => {
+    // Require verification before disabling.
+    try {
+      if (mode === "biometric") {
+        const ok = await verifyBiometric();
+        if (!ok) { toast.error("Authentication failed"); return; }
+      } else if (mode === "passcode") {
+        const entered = window.prompt("Enter current passcode to disable lock:");
+        if (!entered) return;
+        const ok = await verifyPasscode(entered);
+        if (!ok) { toast.error("Incorrect passcode"); return; }
+      }
+      disableLock();
+      reload();
+      toast.success("App lock disabled");
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to disable lock");
+    }
+  };
+
+  const handleEnableBiometric = async () => {
+    setBusy(true);
+    try {
+      await registerBiometric();
+      toast.success("Biometric lock enabled");
+      reload();
+    } catch (e: any) {
+      toast.error(e?.message || "Couldn't register biometric — try passcode instead");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleSetPasscode = async () => {
+    if (pin !== pin2) { toast.error("Passcodes don't match"); return; }
+    setBusy(true);
+    try {
+      await setPasscode(pin);
+      toast.success("Passcode lock enabled");
+      setPin(""); setPin2(""); setSetupOpen(false);
+      reload();
+    } catch (e: any) {
+      toast.error(e?.message || "Couldn't set passcode");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="space-y-3 rounded-2xl border border-border bg-card p-4 shadow-card">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold flex items-center gap-1.5">
+          <ShieldCheck className="h-4 w-4" /> App lock
+        </h3>
+        {enabled && (
+          <span className="rounded-full bg-success/15 px-2 py-0.5 text-[10px] font-medium text-success">
+            {mode === "biometric" ? "Biometric" : "Passcode"} on
+          </span>
+        )}
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Require authentication every time the app is opened, switched to, or restored from background.
+      </p>
+
+      {enabled ? (
+        <Button variant="destructive" className="w-full gap-2" onClick={handleDisable}>
+          <Lock className="h-4 w-4" /> Disable app lock
+        </Button>
+      ) : setupOpen ? (
+        <div className="space-y-2 rounded-xl border border-border bg-secondary/30 p-3">
+          <Label className="text-xs">Choose a {mode === "passcode" ? "" : ""}4-6 digit passcode</Label>
+          <Input
+            type="password"
+            inputMode="numeric"
+            maxLength={6}
+            value={pin}
+            onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 6))}
+            placeholder="••••"
+            className="text-center tracking-[0.5em]"
+          />
+          <Input
+            type="password"
+            inputMode="numeric"
+            maxLength={6}
+            value={pin2}
+            onChange={(e) => setPin2(e.target.value.replace(/\D/g, "").slice(0, 6))}
+            placeholder="confirm"
+            className="text-center tracking-[0.5em]"
+            onKeyDown={(e) => { if (e.key === "Enter") void handleSetPasscode(); }}
+          />
+          <div className="flex gap-2">
+            <Button onClick={handleSetPasscode} disabled={busy || pin.length < 4} className="flex-1">
+              Set passcode
+            </Button>
+            <Button variant="ghost" onClick={() => { setSetupOpen(false); setPin(""); setPin2(""); }}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {bioSupported && (
+            <Button onClick={handleEnableBiometric} disabled={busy} className="gap-2">
+              <Fingerprint className="h-4 w-4" />
+              Enable biometric
+            </Button>
+          )}
+          <Button variant={bioSupported ? "secondary" : "default"} onClick={() => setSetupOpen(true)} disabled={busy} className="gap-2">
+            <Lock className="h-4 w-4" /> Use passcode
+          </Button>
+        </div>
+      )}
+      {!enabled && !bioSupported && (
+        <p className="text-[10px] text-muted-foreground">
+          Biometric not available on this device — passcode only.
+        </p>
+      )}
     </section>
   );
 }

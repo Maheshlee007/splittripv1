@@ -195,7 +195,7 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
                 <Input value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Dinner at beach shack" autoFocus />
               </div>
 
-              <div className="grid grid-cols-1 xs:grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 <div>
                   <Label>Amount ({group.currency})</Label>
                   <Input
@@ -206,6 +206,15 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
                   />
                 </div>
                 <div>
+                  <Label>Date</Label>
+                  <Input
+                    type="date"
+                    value={expenseDate}
+                    onChange={(e) => setExpenseDate(e.target.value)}
+                    className="mt-2 h-10 text-sm"
+                  />
+                </div>
+                <div className="col-span-2 sm:col-span-1">
                   <Label>Paid by</Label>
                   <select
                     value={paidBy}
@@ -243,32 +252,26 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
                 <span className="text-xs font-medium">Advance collection (track who paid their share)</span>
               </label>
 
-              <div className="grid grid-cols-1 sm:grid-cols-[1fr,auto] gap-2 items-end">
-                <div>
-                  <Label>Category</Label>
-                  <div className="mt-1 flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
-                    {CATEGORIES.map((c) => {
-                      const Icon = c.icon;
-                      const active = c.id === category;
-                      return (
-                        <button
-                          key={c.id}
-                          onClick={() => setCategory(c.id)}
-                          className={cn(
-                            "flex shrink-0 flex-col items-center gap-0.5 rounded-lg px-2 py-1.5 text-[10px] font-medium transition",
-                            active ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground"
-                          )}
-                        >
-                          <Icon className="h-3.5 w-3.5" />
-                          {c.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-                <div className="w-[120px]">
-                  <Label>Date</Label>
-                  <Input type="date" value={expenseDate} onChange={(e) => setExpenseDate(e.target.value)} className="text-xs" />
+              <div>
+                <Label>Category</Label>
+                <div className="mt-1 flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+                  {CATEGORIES.map((c) => {
+                    const Icon = c.icon;
+                    const active = c.id === category;
+                    return (
+                      <button
+                        key={c.id}
+                        onClick={() => setCategory(c.id)}
+                        className={cn(
+                          "flex shrink-0 flex-col items-center gap-0.5 rounded-lg px-2 py-1.5 text-[10px] font-medium transition",
+                          active ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground"
+                        )}
+                      >
+                        <Icon className="h-3.5 w-3.5" />
+                        {c.label}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 

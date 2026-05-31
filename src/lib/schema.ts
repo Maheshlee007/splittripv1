@@ -111,6 +111,21 @@ export const GroupSchema = z.object({
   activity: z.array(ActivitySchema).max(500).optional(),
 }).passthrough();
 
+export const PersonalExpenseSchema = z.object({
+  id: safeStr(64, 1),
+  description: safeStr(500).default(""),
+  amount: finiteAmount,
+  currency: safeStr(8).default("INR"),
+  category: safeStr(40).default("misc"),
+  paymentMethod: safeStr(40).default("cash"),
+  date: finiteTimestamp,
+  monthKey: safeStr(10),
+  note: safeStr(1000).optional(),
+  billImage: z.string().max(MAX_BILL_IMAGE).refine((s) => s.startsWith("data:"), { message: "Invalid data URL" }).optional(),
+  createdAt: finiteTimestamp,
+  updatedAt: finiteTimestamp,
+}).passthrough();
+
 export const BackupSchema = z.object({
   app: z.literal("splittrip"),
   version: z.number().int(),
@@ -122,7 +137,8 @@ export const BackupSchema = z.object({
     upiId: safeStr(80).optional(),
   }).nullable(),
   groups: z.array(GroupSchema).max(500),
-});
+  personalExpenses: z.array(PersonalExpenseSchema).max(20000).optional(),
+}).passthrough();
 
 export function safeParseGroup(raw: unknown) {
   return GroupSchema.safeParse(raw);

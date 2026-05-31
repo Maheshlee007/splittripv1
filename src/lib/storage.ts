@@ -86,6 +86,31 @@ function db() {
 const LS_GROUPS = "splittrip:groups";
 const LS_PROFILE = "splittrip:profile";
 const LS_THEME = "splittrip:theme";
+const LS_PERSONAL_EXPENSES = "splittrip:personal_expenses";
+const LS_PERSONAL_BUDGETS = "splittrip:personal_budgets";
+const LS_PAYMENT_METHODS = "splittrip:payment_methods";
+const LS_LENDINGS = "splittrip:lendings";
+
+function lsGet<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return fallback;
+    return JSON.parse(raw) as T;
+  } catch { return fallback; }
+}
+function lsSet<T>(key: string, value: T) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* quota */ }
+}
+function lsUpsertById<T extends { id: string }>(key: string, item: T) {
+  const arr = lsGet<T[]>(key, []);
+  const i = arr.findIndex((x) => x.id === item.id);
+  if (i === -1) arr.push(item); else arr[i] = item;
+  lsSet(key, arr);
+}
+function lsRemoveById<T extends { id: string }>(key: string, id: string) {
+  const arr = lsGet<T[]>(key, []);
+  lsSet(key, arr.filter((x) => x.id !== id));
+}
 
 function lsGetGroups(): Group[] {
   try { return JSON.parse(localStorage.getItem(LS_GROUPS) || "[]"); } catch { return []; }
@@ -150,29 +175,57 @@ export function isIdbAvailable() { return idbAvailable; }
 export async function loadPersonalExpensesByMonth(monthKey: string): Promise<PersonalExpense[]> {
   try {
     return await (await db()).getAllFromIndex("personal_expenses", "by_month", monthKey);
-  } catch { return []; }
+  } catch {
+    return lsGet<PersonalExpense[]>(LS_PERSONAL_EXPENSES, []).filter((e) => e.monthKey === monthKey);
+  }
 }
 
 export async function loadAllPersonalExpenses(): Promise<PersonalExpense[]> {
   try {
-    return await (await db()).getAll("personal_expenses");
-  } catch { return []; }
+    const v = await (await db()).getAll("personal_expenses");
+    if (v.length === 0) {
+      // hydrate IDB from LS if IDB was wiped (recovery)
+      const ls = lsGet<PersonalExpense[]>(LS_PERSONAL_EXPENSES, []);
+      for (const e of ls) await (await db()).put("personal_expenses", e);
+      return ls;
+    }
+    return v;
+  } catch {
+    return lsGet<PersonalExpense[]>(LS_PERSONAL_EXPENSES, []);
+  }
 }
 
 export async function savePersonalExpense(e: PersonalExpense): Promise<void> {
-  try { await (await db()).put("personal_expenses", e); } catch {}
+  try { await (await db()).put("personal_expenses", e); } catch { /* noop */ }
+  lsUpsertById(LS_PERSONAL_EXPENSES, e);
 }
 
 export async function deletePersonalExpense(id: string): Promise<void> {
-  try { await (await db()).delete("personal_expenses", id); } catch {}
+  try { await (await db()).delete("personal_expenses", id); } catch { /* noop */ }
+  lsRemoveById<PersonalExpense>(LS_PERSONAL_EXPENSES, id);
 }
 
 export async function loadPersonalBudgets(): Promise<PersonalBudget[]> {
-  try { return await (await db()).getAll("personal_budgets"); } catch { return []; }
+  try {
+    const v = await (await db()).getAll("personal_budgets");
+    if (v.length === 0) {
+      const ls = lsGet<PersonalBudget[]>(LS_PERSONAL_BUDGETS, []);
+      for (const b of ls) await (await db()).put("personal_budgets", b);
+      return ls;
+    }
+    return v;
+  } catch {
+    return lsGet<PersonalBudget[]>(LS_PERSONAL_BUDGETS, []);
+  }
 }
 
 export async function savePersonalBudget(b: PersonalBudget): Promise<void> {
-  try { await (await db()).put("personal_budgets", b); } catch {}
+  try { await (await db()).put("personal_budgets", b); } catch { /* noop */ }
+  // budgets keyed by monthKey (not id)
+  const arr = lsGet<PersonalBudget[]>(LS_PERSONAL_BUDGETS, []);
+  const i = arr.findIndex((x) => x.monthKey === b.monthKey);
+  if (i === -1) arr.push(b); else arr[i] = b;
+  lsSet(LS_PERSONAL_BUDGETS, arr);
 }
 
 /* ---------- Payment Methods ---------- */
@@ -180,28 +233,51 @@ export async function savePersonalBudget(b: PersonalBudget): Promise<void> {
 export async function loadPaymentMethods(): Promise<CustomPaymentMethod[]> {
   try {
     const items = await (await db()).getAll("personal_payment_methods");
-    return items.length > 0 ? items : DEFAULT_PAYMENT_METHODS;
-  } catch { return DEFAULT_PAYMENT_METHODS; }
+    if (items.length > 0) return items;
+    const ls = lsGet<CustomPaymentMethod[]>(LS_PAYMENT_METHODS, []);
+    if (ls.length > 0) {
+      for (const pm of ls) await (await db()).put("personal_payment_methods", pm);
+      return ls;
+    }
+    return DEFAULT_PAYMENT_METHODS;
+  } catch {
+    const ls = lsGet<CustomPaymentMethod[]>(LS_PAYMENT_METHODS, []);
+    return ls.length > 0 ? ls : DEFAULT_PAYMENT_METHODS;
+  }
 }
 
 export async function savePaymentMethod(pm: CustomPaymentMethod): Promise<void> {
-  try { await (await db()).put("personal_payment_methods", pm); } catch {}
+  try { await (await db()).put("personal_payment_methods", pm); } catch { /* noop */ }
+  lsUpsertById(LS_PAYMENT_METHODS, pm);
 }
 
 export async function deletePaymentMethod(id: string): Promise<void> {
-  try { await (await db()).delete("personal_payment_methods", id); } catch {}
+  try { await (await db()).delete("personal_payment_methods", id); } catch { /* noop */ }
+  lsRemoveById<CustomPaymentMethod>(LS_PAYMENT_METHODS, id);
 }
 
 /* ---------- Lendings ---------- */
 
 export async function loadLendings(): Promise<Lending[]> {
-  try { return await (await db()).getAll("lendings"); } catch { return []; }
+  try {
+    const v = await (await db()).getAll("lendings");
+    if (v.length === 0) {
+      const ls = lsGet<Lending[]>(LS_LENDINGS, []);
+      for (const l of ls) await (await db()).put("lendings", l);
+      return ls;
+    }
+    return v;
+  } catch {
+    return lsGet<Lending[]>(LS_LENDINGS, []);
+  }
 }
 
 export async function saveLending(l: Lending): Promise<void> {
-  try { await (await db()).put("lendings", l); } catch {}
+  try { await (await db()).put("lendings", l); } catch { /* noop */ }
+  lsUpsertById(LS_LENDINGS, l);
 }
 
 export async function deleteLending(id: string): Promise<void> {
-  try { await (await db()).delete("lendings", id); } catch {}
+  try { await (await db()).delete("lendings", id); } catch { /* noop */ }
+  lsRemoveById<Lending>(LS_LENDINGS, id);
 }

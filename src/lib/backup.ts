@@ -26,7 +26,7 @@ export async function downloadBackup(): Promise<void> {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export async function restoreBackup(file: File): Promise<{ groups: number }> {
+export async function restoreBackup(file: File): Promise<{ groups: number; personalExpenses: number }> {
   const text = await file.text();
   let raw: unknown;
   try { raw = JSON.parse(text); } catch { throw new Error("Not valid JSON"); }
@@ -38,8 +38,12 @@ export async function restoreBackup(file: File): Promise<{ groups: number }> {
   const data = parsed.data as unknown as FullBackup;
   if (data.profile) await saveProfile(data.profile);
   for (const g of data.groups) await saveGroup(g);
-  if (data.personalExpenses) {
-    for (const e of data.personalExpenses) await savePersonalExpense(e);
+  let personalCount = 0;
+  if (Array.isArray(data.personalExpenses)) {
+    for (const e of data.personalExpenses) {
+      await savePersonalExpense(e);
+      personalCount++;
+    }
   }
-  return { groups: data.groups.length };
+  return { groups: data.groups.length, personalExpenses: personalCount };
 }
