@@ -22,6 +22,15 @@ const LS_RP_ID = "splittrip:lock:rpId";
 
 /** Session flag — cleared on tab close (sessionStorage). */
 const SS_UNLOCKED = "splittrip:lock:unlocked";
+/** Wall-clock timestamp when the tab was last hidden (sessionStorage). */
+const SS_HIDDEN_AT = "splittrip:lock:hiddenAt";
+/** Failed passcode attempt counter (sessionStorage). */
+const SS_PIN_ATTEMPTS = "splittrip:lock:pinAttempts";
+/** Earliest timestamp the next attempt is allowed (sessionStorage). */
+const SS_PIN_LOCK_UNTIL = "splittrip:lock:pinLockUntil";
+
+/** Grace period: if tab was hidden for less than this many ms, skip re-auth. */
+export const RELOCK_GRACE_MS = 30_000;
 
 export function isLockEnabled(): boolean {
   try { return localStorage.getItem(LS_ENABLED) === "1"; } catch { return false; }
@@ -36,11 +45,65 @@ export function isUnlockedThisSession(): boolean {
 }
 
 export function markUnlocked(): void {
-  try { sessionStorage.setItem(SS_UNLOCKED, "1"); } catch { /* noop */ }
+  try {
+    sessionStorage.setItem(SS_UNLOCKED, "1");
+    sessionStorage.removeItem(SS_HIDDEN_AT);
+    sessionStorage.removeItem(SS_PIN_ATTEMPTS);
+    sessionStorage.removeItem(SS_PIN_LOCK_UNTIL);
+  } catch { /* noop */ }
 }
 
 export function lockNow(): void {
   try { sessionStorage.removeItem(SS_UNLOCKED); } catch { /* noop */ }
+}
+
+/** Record the moment the tab went into background — used for the grace period. */
+export function markHidden(): void {
+  try { sessionStorage.setItem(SS_HIDDEN_AT, String(Date.now())); } catch { /* noop */ }
+}
+
+/** True if the tab returned within RELOCK_GRACE_MS — skips re-auth prompt. */
+export function isWithinGracePeriod(): boolean {
+  try {
+    const raw = sessionStorage.getItem(SS_HIDDEN_AT);
+    if (!raw) return false;
+    const hiddenAt = parseInt(raw, 10);
+    if (!Number.isFinite(hiddenAt)) return false;
+    return Date.now() - hiddenAt < RELOCK_GRACE_MS;
+  } catch { return false; }
+}
+
+/* -------------------- PIN attempt rate limiting -------------------- */
+
+export interface RateLimitState {
+  attempts: number;
+  /** Milliseconds until the next attempt is allowed; 0 if not throttled. */
+  cooldownMs: number;
+}
+
+export function getPinRateLimit(): RateLimitState {
+  try {
+    const attempts = parseInt(sessionStorage.getItem(SS_PIN_ATTEMPTS) || "0", 10) || 0;
+    const until = parseInt(sessionStorage.getItem(SS_PIN_LOCK_UNTIL) || "0", 10) || 0;
+    const cooldownMs = Math.max(0, until - Date.now());
+    return { attempts, cooldownMs };
+  } catch { return { attempts: 0, cooldownMs: 0 }; }
+}
+
+function recordPinFailure(): RateLimitState {
+  try {
+    const attempts = (parseInt(sessionStorage.getItem(SS_PIN_ATTEMPTS) || "0", 10) || 0) + 1;
+    sessionStorage.setItem(SS_PIN_ATTEMPTS, String(attempts));
+    // Exponential back-off starting after 5 failed attempts:
+    // attempt 6 = 5 s, 7 = 10 s, 8 = 20 s, 9 = 40 s, 10+ = 60 s (capped).
+    let cooldownMs = 0;
+    if (attempts >= 5) {
+      const overflow = attempts - 5;
+      cooldownMs = Math.min(60_000, 5_000 * Math.pow(2, overflow));
+      sessionStorage.setItem(SS_PIN_LOCK_UNTIL, String(Date.now() + cooldownMs));
+    }
+    return { attempts, cooldownMs };
+  } catch { return { attempts: 0, cooldownMs: 0 }; }
 }
 
 export function disableLock(): void {
@@ -103,16 +166,41 @@ export async function setPasscode(passcode: string): Promise<void> {
 }
 
 export async function verifyPasscode(passcode: string): Promise<boolean> {
+  // Honour rate limit if any cool-down is active.
+  const rl = getPinRateLimit();
+  if (rl.cooldownMs > 0) return false;
   const saltB64 = localStorage.getItem(LS_SALT);
   const expected = localStorage.getItem(LS_HASH);
   if (!saltB64 || !expected) return false;
   const salt = fromB64(saltB64);
   const actual = await hashPasscode(passcode, salt);
   // constant-time-ish compare
-  if (actual.length !== expected.length) return false;
-  let diff = 0;
-  for (let i = 0; i < actual.length; i++) diff |= actual.charCodeAt(i) ^ expected.charCodeAt(i);
-  return diff === 0;
+  let diff = actual.length === expected.length ? 0 : 1;
+  for (let i = 0; i < Math.max(actual.length, expected.length); i++) {
+    diff |= (actual.charCodeAt(i) || 0) ^ (expected.charCodeAt(i) || 0);
+  }
+  const ok = diff === 0;
+  if (!ok) recordPinFailure();
+  return ok;
+}
+
+/**
+ * Add or replace a passcode while keeping the existing lock mode.
+ * Used to register a passcode fallback alongside biometric.
+ */
+export async function setBackupPasscode(passcode: string): Promise<void> {
+  if (!/^\d{4,6}$/.test(passcode)) throw new Error("Passcode must be 4-6 digits");
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const hash = await hashPasscode(passcode, salt);
+  localStorage.setItem(LS_SALT, toB64(salt.buffer));
+  localStorage.setItem(LS_HASH, hash);
+  // Do NOT touch LS_MODE / LS_ENABLED — biometric stays primary.
+}
+
+/** Remove only the passcode (does not disable biometric). */
+export function removeBackupPasscode(): void {
+  localStorage.removeItem(LS_SALT);
+  localStorage.removeItem(LS_HASH);
 }
 
 /* -------------------- Biometric (WebAuthn) -------------------- */

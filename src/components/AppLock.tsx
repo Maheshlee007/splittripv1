@@ -5,9 +5,12 @@ import {
   isUnlockedThisSession,
   markUnlocked,
   lockNow,
+  markHidden,
+  isWithinGracePeriod,
   verifyBiometric,
   verifyPasscode,
   hasPasscodeFallback,
+  getPinRateLimit,
   type LockMode,
 } from "@/lib/app-lock";
 import { Button } from "@/components/ui/button";
@@ -35,25 +38,30 @@ export function AppLockProvider({ children }: { children: React.ReactNode }) {
     setLocked(computeLocked());
   }, []);
 
-  // Re-lock when tab is hidden for the duration of the hidden period.
-  // Any return from background (visibilitychange / pageshow) requires re-auth.
+  // Re-lock when tab is hidden long enough. A short grace period (30s)
+  // skips re-auth for quick app switches so the UX isn't punishing.
   useEffect(() => {
     if (!isLockEnabled()) return;
     const onHide = () => {
-      lockNow();
-      setLocked(true);
+      markHidden();
     };
     const onShow = () => {
-      // Already unlocked this tab session? then keep open (markUnlocked was called).
+      if (isWithinGracePeriod()) {
+        // Stayed away briefly — keep unlocked, no prompt.
+        return;
+      }
+      lockNow();
       setLocked(computeLocked());
     };
-    document.addEventListener("visibilitychange", () => {
+    const onVis = () => {
       if (document.visibilityState === "hidden") onHide();
       else onShow();
-    });
+    };
+    document.addEventListener("visibilitychange", onVis);
     window.addEventListener("pageshow", onShow);
     window.addEventListener("pagehide", onHide);
     return () => {
+      document.removeEventListener("visibilitychange", onVis);
       window.removeEventListener("pageshow", onShow);
       window.removeEventListener("pagehide", onHide);
     };
@@ -86,7 +94,19 @@ function LockScreen({ onUnlocked }: { onUnlocked: () => void }) {
   const [pin, setPin] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [cooldown, setCooldown] = useState(0);
   const triedBiometricRef = useRef(false);
+
+  // Tick cool-down timer.
+  useEffect(() => {
+    const tick = () => {
+      const rl = getPinRateLimit();
+      setCooldown(rl.cooldownMs);
+    };
+    tick();
+    const t = setInterval(tick, 500);
+    return () => clearInterval(t);
+  }, [error]);
 
   const tryBiometric = useCallback(async () => {
     setBusy(true);
@@ -94,9 +114,22 @@ function LockScreen({ onUnlocked }: { onUnlocked: () => void }) {
     try {
       const ok = await verifyBiometric();
       if (ok) onUnlocked();
-      else setError("Biometric failed. Try again or use passcode.");
+      else {
+        // Auto-switch to passcode if a fallback exists.
+        if (hasPasscodeFallback()) {
+          setUsePasscode(true);
+          setError("Biometric failed — enter your passcode instead.");
+        } else {
+          setError("Biometric failed. Try again.");
+        }
+      }
     } catch (e: any) {
-      setError(e?.message || "Biometric failed.");
+      if (hasPasscodeFallback()) {
+        setUsePasscode(true);
+        setError("Biometric unavailable — enter your passcode.");
+      } else {
+        setError(e?.message || "Biometric failed.");
+      }
     } finally {
       setBusy(false);
     }
@@ -111,13 +144,23 @@ function LockScreen({ onUnlocked }: { onUnlocked: () => void }) {
 
   const submitPin = async () => {
     if (busy) return;
+    if (cooldown > 0) return;
     if (!/^\d{4,6}$/.test(pin)) { setError("Enter 4-6 digits"); return; }
     setBusy(true);
     setError(null);
     try {
       const ok = await verifyPasscode(pin);
       if (ok) onUnlocked();
-      else { setError("Incorrect passcode"); setPin(""); }
+      else {
+        const rl = getPinRateLimit();
+        setCooldown(rl.cooldownMs);
+        setPin("");
+        if (rl.cooldownMs > 0) {
+          setError(`Too many wrong attempts. Try again in ${Math.ceil(rl.cooldownMs / 1000)}s.`);
+        } else {
+          setError(`Incorrect passcode${rl.attempts >= 3 ? ` (${rl.attempts} failed)` : ""}`);
+        }
+      }
     } finally {
       setBusy(false);
     }
@@ -167,8 +210,8 @@ function LockScreen({ onUnlocked }: { onUnlocked: () => void }) {
               placeholder="••••"
               className={cn("text-center text-lg tracking-[0.6em]", error && "border-destructive")}
             />
-            <Button onClick={submitPin} disabled={busy || pin.length < 4} className="w-full">
-              {busy ? "Verifying…" : "Unlock"}
+            <Button onClick={submitPin} disabled={busy || pin.length < 4 || cooldown > 0} className="w-full">
+              {busy ? "Verifying…" : cooldown > 0 ? `Wait ${Math.ceil(cooldown / 1000)}s` : "Unlock"}
             </Button>
             {canUseBiometric && (
               <Button variant="ghost" className="w-full gap-2" onClick={() => { setUsePasscode(false); setError(null); void tryBiometric(); }}>

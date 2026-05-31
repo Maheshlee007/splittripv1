@@ -13,10 +13,13 @@ import {
   getLockMode,
   disableLock,
   setPasscode,
+  setBackupPasscode,
+  removeBackupPasscode,
   registerBiometric,
   isBiometricSupported,
   verifyPasscode,
   verifyBiometric,
+  hasPasscodeFallback,
   type LockMode,
 } from "@/lib/app-lock";
 import { useAppLock } from "@/components/AppLock";
@@ -246,19 +249,23 @@ function LockSection() {
   const [mode, setMode] = useState<LockMode | null>(() => getLockMode());
   const [bioSupported, setBioSupported] = useState(false);
   const [setupOpen, setSetupOpen] = useState(false);
+  const [setupKind, setSetupKind] = useState<"primary" | "backup">("primary");
   const [disableOpen, setDisableOpen] = useState(false);
   const [disablePin, setDisablePin] = useState("");
   const [pin, setPin] = useState("");
   const [pin2, setPin2] = useState("");
   const [busy, setBusy] = useState(false);
+  const [hasBackup, setHasBackup] = useState(false);
 
   useEffect(() => {
     isBiometricSupported().then(setBioSupported);
-  }, []);
+    setHasBackup(hasPasscodeFallback());
+  }, [enabled, mode]);
 
   const reload = () => {
     setEnabled(isLockEnabled());
     setMode(getLockMode());
+    setHasBackup(hasPasscodeFallback());
     refresh();
   };
 
@@ -321,8 +328,13 @@ function LockSection() {
     if (pin !== pin2) { toast.error("Passcodes don't match"); return; }
     setBusy(true);
     try {
-      await setPasscode(pin);
-      toast.success("Passcode lock enabled");
+      if (setupKind === "backup") {
+        await setBackupPasscode(pin);
+        toast.success("Backup passcode set");
+      } else {
+        await setPasscode(pin);
+        toast.success("Passcode lock enabled");
+      }
       setPin(""); setPin2(""); setSetupOpen(false);
       reload();
     } catch (e: any) {
@@ -330,6 +342,12 @@ function LockSection() {
     } finally {
       setBusy(false);
     }
+  };
+
+  const handleRemoveBackup = () => {
+    removeBackupPasscode();
+    reload();
+    toast.success("Backup passcode removed");
   };
 
   return (
@@ -349,39 +367,31 @@ function LockSection() {
       </p>
 
       {enabled ? (
-        <Button variant="destructive" className="w-full gap-2" onClick={handleDisable}>
-          <Lock className="h-4 w-4" /> Disable app lock
-        </Button>
-      ) : setupOpen ? (
-        <div className="space-y-2 rounded-xl border border-border bg-secondary/30 p-3">
-          <Label className="text-xs">Choose a {mode === "passcode" ? "" : ""}4-6 digit passcode</Label>
-          <Input
-            type="password"
-            inputMode="numeric"
-            maxLength={6}
-            value={pin}
-            onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 6))}
-            placeholder="••••"
-            className="text-center tracking-[0.5em]"
-          />
-          <Input
-            type="password"
-            inputMode="numeric"
-            maxLength={6}
-            value={pin2}
-            onChange={(e) => setPin2(e.target.value.replace(/\D/g, "").slice(0, 6))}
-            placeholder="confirm"
-            className="text-center tracking-[0.5em]"
-            onKeyDown={(e) => { if (e.key === "Enter") void handleSetPasscode(); }}
-          />
-          <div className="flex gap-2">
-            <Button onClick={handleSetPasscode} disabled={busy || pin.length < 4} className="flex-1">
-              Set passcode
-            </Button>
-            <Button variant="ghost" onClick={() => { setSetupOpen(false); setPin(""); setPin2(""); }}>
-              Cancel
-            </Button>
-          </div>
+        <div className="space-y-2">
+          <Button variant="destructive" className="w-full gap-2" onClick={handleDisable}>
+            <Lock className="h-4 w-4" /> Disable app lock
+          </Button>
+          {mode === "biometric" && (
+            <div className="rounded-xl border border-border bg-secondary/30 p-3 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <p className="text-xs font-medium">Backup passcode</p>
+                  <p className="text-[10px] text-muted-foreground">
+                    {hasBackup ? "Used if biometric fails or is unavailable." : "Recommended in case biometric stops working."}
+                  </p>
+                </div>
+                {hasBackup ? (
+                  <Button size="sm" variant="ghost" onClick={handleRemoveBackup}>
+                    Remove
+                  </Button>
+                ) : (
+                  <Button size="sm" variant="secondary" className="gap-1.5" onClick={() => { setSetupKind("backup"); setSetupOpen(true); }}>
+                    <Lock className="h-3.5 w-3.5" /> Add
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -391,7 +401,7 @@ function LockSection() {
               Enable biometric
             </Button>
           )}
-          <Button variant={bioSupported ? "secondary" : "default"} onClick={() => setSetupOpen(true)} disabled={busy} className="gap-2">
+          <Button variant={bioSupported ? "secondary" : "default"} onClick={() => { setSetupKind("primary"); setSetupOpen(true); }} disabled={busy} className="gap-2">
             <Lock className="h-4 w-4" /> Use passcode
           </Button>
         </div>
@@ -401,6 +411,53 @@ function LockSection() {
           Biometric not available on this device — passcode only.
         </p>
       )}
+
+      {/* Passcode setup dialog (used for primary passcode and backup passcode) */}
+      <Dialog open={setupOpen} onOpenChange={(v) => { if (!busy) { setSetupOpen(v); if (!v) { setPin(""); setPin2(""); } } }}>
+        <DialogContent className="w-[calc(100vw-2rem)] max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Lock className="h-4 w-4" />
+              {setupKind === "backup" ? "Set backup passcode" : "Set passcode"}
+            </DialogTitle>
+            <DialogDescription>
+              {setupKind === "backup"
+                ? "Used if biometric fails or is unavailable on this device."
+                : "Enter a 4-6 digit passcode. It is hashed locally and never leaves your device."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Input
+              type="password"
+              inputMode="numeric"
+              autoFocus
+              maxLength={6}
+              value={pin}
+              onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              placeholder="••••"
+              className="text-center text-lg tracking-[0.5em]"
+            />
+            <Input
+              type="password"
+              inputMode="numeric"
+              maxLength={6}
+              value={pin2}
+              onChange={(e) => setPin2(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              placeholder="confirm"
+              className="text-center text-lg tracking-[0.5em]"
+              onKeyDown={(e) => { if (e.key === "Enter") void handleSetPasscode(); }}
+            />
+          </div>
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button variant="ghost" onClick={() => { setSetupOpen(false); setPin(""); setPin2(""); }} disabled={busy}>
+              Cancel
+            </Button>
+            <Button onClick={handleSetPasscode} disabled={busy || pin.length < 4}>
+              {busy ? "Saving…" : setupKind === "backup" ? "Set backup" : "Set passcode"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Custom passcode dialog for disabling lock (replaces window.prompt) */}
       <Dialog open={disableOpen} onOpenChange={(v) => { if (!busy) { setDisableOpen(v); if (!v) setDisablePin(""); } }}>
