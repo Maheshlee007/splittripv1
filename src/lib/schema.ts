@@ -126,6 +126,36 @@ export const PersonalExpenseSchema = z.object({
   updatedAt: finiteTimestamp,
 }).passthrough();
 
+export const PersonalBudgetSchema = z.object({
+  monthKey: safeStr(10),
+  category: safeStr(40).optional(),
+  amount: finiteAmount,
+  currency: safeStr(8).default("INR"),
+}).passthrough();
+
+export const CustomPaymentMethodSchema = z.object({
+  id: safeStr(64, 1),
+  label: safeStr(80),
+  icon: safeStr(40).optional(),
+  isDefault: z.boolean().optional(),
+}).passthrough();
+
+export const LendingSchema = z.object({
+  id: safeStr(64, 1),
+  personName: safeStr(80),
+  personPhone: safeStr(40).optional(),
+  amount: finiteAmount,
+  currency: safeStr(8).default("INR"),
+  direction: z.enum(["owed_to_me", "i_owe"]),
+  reason: safeStr(500).optional(),
+  date: finiteTimestamp,
+  dueDate: finiteTimestamp.optional(),
+  status: z.enum(["pending", "partial", "settled"]),
+  partialAmount: finiteAmount.optional(),
+  settledAt: finiteTimestamp.optional(),
+  createdAt: finiteTimestamp,
+}).passthrough();
+
 export const BackupSchema = z.object({
   app: z.literal("splittrip"),
   version: z.number().int(),
@@ -138,6 +168,9 @@ export const BackupSchema = z.object({
   }).nullable(),
   groups: z.array(GroupSchema).max(500),
   personalExpenses: z.array(PersonalExpenseSchema).max(20000).optional(),
+  personalBudgets: z.array(PersonalBudgetSchema).max(2000).optional(),
+  paymentMethods: z.array(CustomPaymentMethodSchema).max(200).optional(),
+  lendings: z.array(LendingSchema).max(5000).optional(),
 }).passthrough();
 
 export function safeParseGroup(raw: unknown) {

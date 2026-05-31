@@ -207,7 +207,10 @@ function BackupSection() {
       const parts = [
         `${r.groups} trip${r.groups === 1 ? "" : "s"}`,
         `${r.personalExpenses} personal expense${r.personalExpenses === 1 ? "" : "s"}`,
+        `${r.lendings} lending${r.lendings === 1 ? "" : "s"}`,
       ];
+      if (r.personalBudgets) parts.push(`${r.personalBudgets} budget${r.personalBudgets === 1 ? "" : "s"}`);
+      if (r.paymentMethods) parts.push(`${r.paymentMethods} payment method${r.paymentMethods === 1 ? "" : "s"}`);
       toast.success(`Restored ${parts.join(" + ")}. Refreshing…`);
       setTimeout(() => window.location.reload(), 1200);
     } catch (e: any) {
@@ -237,7 +240,7 @@ function BackupSection() {
         </Button>
       </div>
       <p className="text-[10px] text-muted-foreground">
-        Backup includes your profile + every trip (members, expenses, requests, settlements, bill photos) + personal expenses.
+        Backup includes your profile + every trip (members, expenses, requests, settlements, bill photos) + personal expenses, budgets, payment methods and lendings.
       </p>
     </section>
   );
