@@ -1,8 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { Plus, Share2, Wifi, WifiOff, Trash2, FileSpreadsheet, FileText, MessageCircle, Image as ImageIcon, MoreVertical, FileJson, BarChart3, Archive, ArchiveRestore, Eye, Activity, Pencil, RefreshCw } from "lucide-react";
+import { Plus, Share2, Wifi, WifiOff, Trash2, FileSpreadsheet, FileText, MessageCircle, Image as ImageIcon, MoreVertical, FileJson, BarChart3, Archive, ArchiveRestore, Eye, Activity, Pencil, RefreshCw, ChevronLeft, Receipt, Scale, Users } from "lucide-react";
 import { useApp } from "@/store/AppStore";
-import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ExpensesList } from "@/components/ExpensesList";
@@ -14,7 +13,7 @@ import { ActivityView } from "@/components/ActivityView";
 import { ExpenseDialog } from "@/components/ExpenseDialog";
 import { ShareCodeDialog } from "@/components/ShareCodeDialog";
 import { ExportPreview } from "@/components/ExportPreview";
-import { totalSpent } from "@/lib/balances";
+import { totalSpent, isPreAdvance } from "@/lib/balances";
 import { fmtMoney } from "@/lib/format";
 import { exportExcel } from "@/lib/exports";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -98,6 +97,7 @@ export default function GroupPage() {
 
   const [forceOffline, setForceOffline] = useState(false);
   const hasLocalData = group.expenses.length > 0;
+  const visibleExpenseCount = group.expenses.filter((e) => !isPreAdvance(e)).length;
   const wasApproved = selfMember?.status === "active";
   const autoSyncStartedRef = useRef(false);
 
@@ -143,36 +143,45 @@ export default function GroupPage() {
 
   return (
     <>
-      <PageHeader
-        back="/"
-        title={`${group.emoji} ${group.name}${group.archived ? " · archived" : ""}`}
-        subtitle={
-          <span className="flex items-center gap-1">
-            {live ? <Wifi className="h-3 w-3 text-success" /> : <WifiOff className="h-3 w-3" />}
-            {live ? `${peerCount} peer${peerCount === 1 ? "" : "s"}` : "offline"}
-            {isSyncing && (
-              <span className="text-[10px] text-warning animate-pulse ml-1">syncing…</span>
-            )}
-            <span>·</span>
-            <code className="font-mono">{group.id}</code>
-          </span>
-        }
-        actions={
-          <div className="flex items-center gap-1">
+      <header className="sticky top-0 z-30 border-b border-border bg-background/85 backdrop-blur safe-top">
+        <div className="mx-auto flex max-w-screen-xl items-start gap-2 px-3 py-2.5 sm:items-center sm:gap-3 sm:px-4 sm:py-3">
+          <button
+            onClick={() => nav("/")}
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-full hover:bg-secondary"
+            aria-label="Back"
+          >
+            <ChevronLeft className="h-5 w-5" />
+          </button>
+
+          <div className="min-w-0 flex-1">
+            <h1 className="text-[15px] font-semibold leading-tight sm:text-lg">
+              {group.emoji} {group.name}{group.archived ? " · archived" : ""}
+            </h1>
+            <div className="mt-0.5 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+              {live ? <Wifi className="h-3 w-3 text-success" /> : <WifiOff className="h-3 w-3" />}
+              <span>{live ? `${peerCount} peer${peerCount === 1 ? "" : "s"}` : "offline"}</span>
+              {isSyncing && (
+                <span className="text-[10px] text-warning animate-pulse">syncing…</span>
+              )}
+              <span>·</span>
+              <code className="font-mono">{group.id}</code>
+            </div>
+          </div>
+
+          <div className="flex shrink-0 items-center gap-1 self-start sm:self-auto">
             {!group.syncDisabled && (
-              <Button size="sm" variant="ghost" onClick={() => startSync()} title={isHost ? "Sync All" : "Sync Data"} disabled={isSyncing}>
-                <RefreshCw className={`h-4 w-4 ${isSyncing ? "animate-spin" : ""}`} />
+              <Button size="sm" variant="ghost" className="h-8 gap-1 px-2.5 text-xs" onClick={() => setShareOpen(true)}>
+                <Share2 className="h-3.5 w-3.5" /> Invite
               </Button>
             )}
-            <Button size="sm" variant="ghost" onClick={() => setShareOpen(true)}>
-              <Share2 className="h-4 w-4" />
-            </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button size="sm" variant="ghost"><MoreVertical className="h-4 w-4" /></Button>
+                <Button size="sm" variant="ghost" className="h-8 gap-1 px-2.5 text-xs">
+                  <MoreVertical className="h-3.5 w-3.5" /> Export
+                </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
-                {isAdmin && (
+                {isAdmin && group.syncDisabled && (
                   <DropdownMenuItem
                     onClick={async () => {
                       const newName = prompt("Rename trip:", group.name);
@@ -257,8 +266,8 @@ export default function GroupPage() {
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
-        }
-      />
+        </div>
+      </header>
 
       <div className="mx-auto w-full max-w-screen-xl px-4 pt-4 pb-32 md:pb-16">
         {/* Sync status banner */}
@@ -295,7 +304,7 @@ export default function GroupPage() {
           <p className="text-[11px] font-medium uppercase tracking-wider opacity-80">Total spent</p>
           <p className="text-3xl font-bold tabular-nums">{fmtMoney(totalSpent(group), group.currency)}</p>
           <div className="mt-2 flex items-center gap-3 text-xs opacity-90">
-            <span>{group.expenses.length} expense{group.expenses.length === 1 ? "" : "s"}</span>
+            <span>{visibleExpenseCount} expense{visibleExpenseCount === 1 ? "" : "s"}</span>
             <span>·</span>
             <span>{group.members.filter((m) => m.status !== "pending").length} active</span>
             {group.members.some((m) => m.status === "pending") && (
@@ -310,11 +319,12 @@ export default function GroupPage() {
         <Tabs defaultValue={initialTab}>
           <div className="sticky top-0 z-10 -mx-1 overflow-x-auto pb-1 bg-background pt-1">
             <TabsList className="inline-flex w-max min-w-full gap-1 px-1">
-              <TabsTrigger value="expenses" className="shrink-0 px-3">Expenses</TabsTrigger>
-              <TabsTrigger value="balances" className="shrink-0 px-3">Balances</TabsTrigger>
-              <TabsTrigger value="dashboard" className="shrink-0 px-3"><BarChart3 className="h-3.5 w-3.5" /></TabsTrigger>
-              <TabsTrigger value="activity" className="shrink-0 px-3"><Activity className="h-3.5 w-3.5" /></TabsTrigger>
+              <TabsTrigger value="expenses" className="shrink-0 px-3"><Receipt className="mr-1 h-3.5 w-3.5" /> Expenses</TabsTrigger>
+              <TabsTrigger value="balances" className="shrink-0 px-3"><Scale className="mr-1 h-3.5 w-3.5" /> Balances</TabsTrigger>
+              <TabsTrigger value="dashboard" className="shrink-0 px-3"><BarChart3 className="mr-1 h-3.5 w-3.5" /> Trip breakdown</TabsTrigger>
+              <TabsTrigger value="activity" className="shrink-0 px-3"><Activity className="mr-1 h-3.5 w-3.5" /> Activity <span className="ml-1 inline-flex h-2 w-2 animate-pulse rounded-full bg-warning" /></TabsTrigger>
               <TabsTrigger value="requests" className="shrink-0 px-3">
+                <MessageCircle className="mr-1 h-3.5 w-3.5" />
                 Requests
                 {(group.requests.filter((r) => r.status === "pending").length + group.settlements.filter((s) => s.status === "pending").length) > 0 && (
                   <span className="ml-1.5 rounded-full bg-warning px-1.5 text-[10px] text-warning-foreground">
@@ -323,6 +333,7 @@ export default function GroupPage() {
                 )}
               </TabsTrigger>
               <TabsTrigger value="members" className="shrink-0 px-3">
+                <Users className="mr-1 h-3.5 w-3.5" />
                 Members
                 {group.members.filter((m) => m.status === "pending").length > 0 && (
                   <span className="ml-1.5 rounded-full bg-warning px-1.5 text-[10px] text-warning-foreground">

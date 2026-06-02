@@ -1,6 +1,6 @@
 import { forwardRef, useMemo } from "react";
 import { Group } from "@/lib/types";
-import { buildExpenseBreakdownRows, buildMemberLedger, totalSpent, computeShareAmount } from "@/lib/balances";
+import { buildExpenseBreakdownRows, buildMemberLedger, totalSpent, computeShareAmount, isAdvanceExpense } from "@/lib/balances";
 import { fmtMoney } from "@/lib/format";
 import { getCategory } from "@/lib/categories";
 import { TrendingUp, Users, Receipt, Wallet, Banknote } from "lucide-react";
@@ -16,7 +16,7 @@ export const DashboardView = forwardRef<HTMLDivElement, { group: Group }>(({ gro
     const map: Record<string, number> = {};
     for (const m of activeMembers) map[m.id] = 0;
     for (const e of group.expenses) {
-      if (e.isAdvance) continue;
+      if (isAdvanceExpense(e)) continue;
       map[e.paidBy] = (map[e.paidBy] ?? 0) + e.amount;
     }
     return map;
@@ -31,7 +31,7 @@ export const DashboardView = forwardRef<HTMLDivElement, { group: Group }>(({ gro
       ownerExtraMap[m.id] = 0;
     }
 
-    for (const e of group.expenses.filter((x) => x.isAdvance)) {
+    for (const e of group.expenses.filter((x) => isAdvanceExpense(x))) {
       let collected = 0;
       for (const s of e.splits) {
         const share = computeShareAmount(e.amount, e.splitMode, e.splits, s.memberId);
@@ -67,7 +67,7 @@ export const DashboardView = forwardRef<HTMLDivElement, { group: Group }>(({ gro
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <Stat icon={<Wallet className="h-4 w-4" />} label="Total" value={fmtMoney(total, group.currency)} />
         <Stat icon={<Users className="h-4 w-4" />} label="Avg / person" value={fmtMoney(avg, group.currency)} />
-        <Stat icon={<Receipt className="h-4 w-4" />} label="Expenses" value={String(group.expenses.length)} />
+        <Stat icon={<Receipt className="h-4 w-4" />} label="Expenses" value={String(rows.length)} />
         <Stat icon={<TrendingUp className="h-4 w-4" />} label="Active" value={String(activeMembers.length)} />
       </div>
 
@@ -87,7 +87,9 @@ export const DashboardView = forwardRef<HTMLDivElement, { group: Group }>(({ gro
                   <th className="px-2 py-2 font-semibold">Category / desc</th>
                   <th className="px-2 py-2 text-right font-semibold">Total</th>
                   {activeMembers.map((m) => (
-                    <th key={m.id} className="px-2 py-2 text-right font-semibold">{m.name}</th>
+                    <th key={m.id} className="px-2 py-2 text-right font-semibold">
+                      <span className="inline-block max-w-[92px] truncate align-bottom" title={m.name}>{m.name}</span>
+                    </th>
                   ))}
                 </tr>
               </thead>
@@ -172,7 +174,7 @@ export const DashboardView = forwardRef<HTMLDivElement, { group: Group }>(({ gro
       </section>
 
       {/* Advance Payments Section */}
-      {group.expenses.some(e => e.isAdvance) && (
+      {group.expenses.some(e => isAdvanceExpense(e)) && (
         <section className="rounded-2xl border border-border bg-card p-3 shadow-card sm:p-4">
           <div className="mb-3 flex items-center gap-2">
             <Banknote className="h-4 w-4 text-success" />
@@ -185,12 +187,14 @@ export const DashboardView = forwardRef<HTMLDivElement, { group: Group }>(({ gro
                   <th className="px-2 py-2 font-semibold">Description</th>
                   <th className="px-2 py-2 text-right font-semibold">Total</th>
                   {activeMembers.map((m) => (
-                    <th key={m.id} className="px-2 py-2 text-center font-semibold">{m.name}</th>
+                    <th key={m.id} className="px-2 py-2 text-center font-semibold">
+                      <span className="inline-block max-w-[92px] truncate align-bottom" title={m.name}>{m.name}</span>
+                    </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {group.expenses.filter(e => e.isAdvance).map((e) => {
+                {group.expenses.filter(e => isAdvanceExpense(e)).map((e) => {
                   const cat = getCategory(e.category);
                   return (
                     <tr key={e.id} className="border-b border-border/60 last:border-0 hover:bg-secondary/30">

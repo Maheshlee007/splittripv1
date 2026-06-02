@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Group, Expense, Split, SplitMode } from "@/lib/types";
+import { Group, Expense, Split, SplitMode, ExpenseKind } from "@/lib/types";
 import { CATEGORIES } from "@/lib/categories";
 import { fmtMoney } from "@/lib/format";
 import { computeShareAmount } from "@/lib/balances";
@@ -29,6 +29,18 @@ const MODES: { id: SplitMode; label: string }[] = [
   { id: "exact", label: "Exact" },
   { id: "percent", label: "%" },
 ];
+
+const EXPENSE_KINDS: { id: ExpenseKind; label: string; hint: string }[] = [
+  { id: "general", label: "General", hint: "Normal expense" },
+  { id: "advance_common", label: "Advance-common", hint: "Expense + advance tracking" },
+  { id: "pre_advance", label: "Pre-advance", hint: "Advance top-up only" },
+];
+
+function kindFromExpense(e?: Expense): ExpenseKind {
+  if (!e) return "general";
+  if (e.expenseKind) return e.expenseKind;
+  return e.isAdvance ? "advance_common" : "general";
+}
 
 async function fileToDataUrl(file: File, maxW = 1280): Promise<string> {
   const url = URL.createObjectURL(file);
@@ -74,7 +86,7 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
   const [note, setNote] = useState("");
   const [billImage, setBillImage] = useState<string | undefined>();
   const [expenseDate, setExpenseDate] = useState<string>(toDateInput(Date.now()));
-  const [isAdvance, setIsAdvance] = useState(false);
+  const [expenseKind, setExpenseKind] = useState<ExpenseKind>("general");
   const [advancePaid, setAdvancePaid] = useState<Set<string>>(new Set());
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -91,7 +103,7 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
         setNote(initial.note ?? "");
         setBillImage(initial.billImage);
         setExpenseDate(toDateInput(initial.createdAt));
-        setIsAdvance(initial.isAdvance ?? false);
+        setExpenseKind(kindFromExpense(initial));
         setAdvancePaid(new Set((initial.advancePayments ?? []).filter(a => a.hasPaid).map(a => a.memberId)));
       } else {
         setDesc("");
@@ -104,7 +116,7 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
         setNote("");
         setBillImage(undefined);
         setExpenseDate(toDateInput(Date.now()));
-        setIsAdvance(false);
+        setExpenseKind("general");
         setAdvancePaid(new Set());
       }
     }
@@ -122,6 +134,7 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
   }, [open, group.members]);
 
   const amountNum = parseFloat(amount) || 0;
+  const effectiveAmount = expenseKind === "pre_advance" ? amountNum * participants.size : amountNum;
 
   const splits: Split[] = useMemo(() => {
     return [...participants].map((id) => ({ memberId: id, value: parseFloat(splitValues[id] ?? "1") || (mode === "equal" ? 0 : 1) }));
@@ -129,8 +142,8 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
 
   const sumExact = mode === "exact" ? splits.reduce((a, b) => a + b.value, 0) : 0;
   const sumPercent = mode === "percent" ? splits.reduce((a, b) => a + b.value, 0) : 0;
-  const exactInvalid = mode === "exact" && Math.abs(sumExact - amountNum) > 0.01 && amountNum > 0;
-  const percentInvalid = mode === "percent" && Math.abs(sumPercent - 100) > 0.1;
+  const exactInvalid = expenseKind !== "pre_advance" && mode === "exact" && Math.abs(sumExact - amountNum) > 0.01 && amountNum > 0;
+  const percentInvalid = expenseKind !== "pre_advance" && mode === "percent" && Math.abs(sumPercent - 100) > 0.1;
 
   const canSave = desc.trim() && amountNum > 0 && participants.size > 0 && !exactInvalid && !percentInvalid;
 
@@ -155,25 +168,26 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
 
   const handleSave = () => {
     if (!canSave) return;
-    const advancePayments = isAdvance
+    const advancePayments = expenseKind !== "general"
       ? [...participants].map(memberId => ({
           memberId,
-          hasPaid: advancePaid.has(memberId),
-          paidAt: advancePaid.has(memberId) ? Date.now() : undefined,
+          hasPaid: expenseKind === "pre_advance" ? true : advancePaid.has(memberId),
+          paidAt: expenseKind === "pre_advance" || advancePaid.has(memberId) ? Date.now() : undefined,
         }))
       : undefined;
     onSave({
       description: desc.trim(),
-      amount: amountNum,
+      amount: effectiveAmount,
       currency: group.currency,
-      paidBy,
-      category: isAdvance ? "advance" : category,
+      paidBy: expenseKind === "pre_advance" ? (group.ownerId || paidBy) : paidBy,
+      category: expenseKind === "general" ? category : "advance",
       note: note.trim() || undefined,
-      splitMode: mode,
+      splitMode: expenseKind === "pre_advance" ? "equal" : mode,
       splits,
       billImage,
       date: fromDateInput(expenseDate, initial?.date ?? initial?.createdAt ?? Date.now()),
-      isAdvance: isAdvance || undefined,
+      expenseKind,
+      isAdvance: expenseKind !== "general" || undefined,
       advancePayments,
     } as any);
     onOpenChange(false);
@@ -197,7 +211,7 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
 
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 <div>
-                  <Label>Amount ({group.currency})</Label>
+                  <Label>{expenseKind === "pre_advance" ? `Per-member amount (${group.currency})` : `Amount (${group.currency})`}</Label>
                   <Input
                     inputMode="decimal"
                     value={amount}
@@ -217,40 +231,59 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
                 <div className="col-span-2 sm:col-span-1">
                   <Label>Paid by</Label>
                   <select
-                    value={paidBy}
+                    value={expenseKind === "pre_advance" ? (group.ownerId || paidBy) : paidBy}
                     onChange={(e) => setPaidBy(e.target.value)}
-                    className="mt-2 flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    disabled={expenseKind === "pre_advance"}
+                    className="mt-2 flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm disabled:opacity-60"
                   >
                     {group.members.map((m) => (
                       <option key={m.id} value={m.id}>{m.name}</option>
                     ))}
                   </select>
+                  {expenseKind === "pre_advance" && (
+                    <p className="mt-1 text-[11px] text-muted-foreground">Not needed for pre-advance. Members selected below are treated as contributors.</p>
+                  )}
                 </div>
               </div>
 
-              {/* Advance payment toggle */}
-              <label className="flex items-center gap-2 rounded-lg bg-secondary/60 px-3 py-2 cursor-pointer hover:bg-secondary transition">
-                <input
-                  type="checkbox"
-                  checked={isAdvance}
+              <div>
+                <Label>Expense type</Label>
+                <select
+                  value={expenseKind}
                   onChange={(e) => {
-                    setIsAdvance(e.target.checked);
-                    if (e.target.checked) {
-                      // Auto-select advance category
-                      setCategory("advance");
+                    const next = e.target.value as ExpenseKind;
+                    setExpenseKind(next);
+                    const nextAdvance = next !== "general";
+                    if (nextAdvance) setCategory("advance");
+                    if (next === "pre_advance") {
+                      setMode("equal");
+                      setParticipants(new Set());
+                      setAdvancePaid(new Set());
+                      setPaidBy(group.ownerId || paidBy);
+                      if (!note.trim()) setNote("Pre-advance top-up");
+                    } else if (next === "advance_common") {
+                      setAdvancePaid(new Set([...participants]));
                       if (!note.trim()) setNote("Advance collection");
-                      // Auto-select all participants as paid initially
-                      setAdvancePaid(new Set(participants));
                     } else {
-                      if (note === "Advance collection") setNote("");
+                      if (note === "Advance collection" || note === "Pre-advance top-up") setNote("");
                       setAdvancePaid(new Set());
                     }
                   }}
-                  className="h-4 w-4 accent-[hsl(var(--primary))]"
-                />
-                <Banknote className="h-4 w-4 text-success" />
-                <span className="text-xs font-medium">Advance collection (track who paid their share)</span>
-              </label>
+                  className="mt-2 flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  {EXPENSE_KINDS.map((k) => (
+                    <option key={k.id} value={k.id}>{k.label}</option>
+                  ))}
+                </select>
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  {EXPENSE_KINDS.find((k) => k.id === expenseKind)?.hint}
+                </p>
+                {expenseKind === "pre_advance" && participants.size > 0 && (
+                  <p className="mt-1 text-[11px] text-warning">
+                    Total advance recorded: {fmtMoney(effectiveAmount, group.currency)} ({participants.size} x {fmtMoney(amountNum, group.currency)})
+                  </p>
+                )}
+              </div>
 
               <div>
                 <Label>Category</Label>
@@ -261,11 +294,12 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
                     return (
                       <button
                         key={c.id}
-                        onClick={() => setCategory(c.id)}
+                        onClick={() => expenseKind === "general" && setCategory(c.id)}
                         className={cn(
                           "flex shrink-0 flex-col items-center gap-0.5 rounded-lg px-2 py-1.5 text-[10px] font-medium transition",
                           active ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground"
                         )}
+                        disabled={expenseKind !== "general"}
                       >
                         <Icon className="h-3.5 w-3.5" />
                         {c.label}
@@ -273,6 +307,9 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
                     );
                   })}
                 </div>
+                {expenseKind !== "general" && (
+                  <p className="mt-1 text-[11px] text-muted-foreground">Advance types are automatically saved under Advance category.</p>
+                )}
               </div>
 
               {/* Bill + note (visible on desktop below left col, on mobile it shows after split) */}
@@ -325,17 +362,21 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
                   {MODES.map((m) => (
                     <button
                       key={m.id}
-                      onClick={() => setMode(m.id)}
+                      onClick={() => expenseKind !== "pre_advance" && setMode(m.id)}
                       className={cn(
                         "rounded-md px-2 py-1 text-[11px] font-medium",
                         mode === m.id ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"
                       )}
+                      disabled={expenseKind === "pre_advance"}
                     >
                       {m.label}
                     </button>
                   ))}
                 </div>
               </div>
+              {expenseKind === "pre_advance" && (
+                <p className="mb-2 text-[11px] text-muted-foreground">Pre-advance always uses equal split so each selected member contributes the same amount.</p>
+              )}
               <div className="mt-1 flex items-center gap-2 text-[11px]">
                 <span className="text-muted-foreground">{participants.size} of {group.members.length} included</span>
                 <button onClick={allOn} className="ml-auto inline-flex items-center gap-1 rounded-md bg-secondary px-2 py-0.5 hover:bg-accent">
@@ -350,7 +391,7 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
                   const checked = participants.has(m.id);
                   const owed =
                     checked && amountNum > 0
-                      ? computeShareAmount(amountNum, mode, splits, m.id)
+                      ? computeShareAmount(effectiveAmount, expenseKind === "pre_advance" ? "equal" : mode, splits, m.id)
                       : 0;
                   return (
                     <label
@@ -367,7 +408,7 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
                         className="h-4 w-4 shrink-0 accent-[hsl(var(--primary))]"
                       />
                       <span className="min-w-0 flex-1 truncate text-sm">{m.name}</span>
-                      {checked && mode !== "equal" && (
+                      {checked && expenseKind !== "pre_advance" && mode !== "equal" && (
                         <Input
                           inputMode="decimal"
                           value={splitValues[m.id] ?? ""}
@@ -395,7 +436,7 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
               )}
 
               {/* Advance collection: who has paid their share */}
-              {isAdvance && participants.size > 0 && (
+              {expenseKind === "advance_common" && participants.size > 0 && (
                 <div className="mt-3 rounded-xl border border-success/30 bg-success/5 p-3">
                   <div className="flex items-center gap-2 mb-2">
                     <Banknote className="h-4 w-4 text-success" />
@@ -421,7 +462,7 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
                   <div className="space-y-1 max-h-40 overflow-y-auto">
                     {group.members.filter(m => participants.has(m.id)).map((m) => {
                       const paid = advancePaid.has(m.id);
-                      const share = amountNum > 0 ? computeShareAmount(amountNum, mode, splits, m.id) : 0;
+                      const share = amountNum > 0 ? computeShareAmount(effectiveAmount, mode, splits, m.id) : 0;
                       return (
                         <label
                           key={m.id}
@@ -458,10 +499,32 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
                           [...advancePaid].reduce((sum, id) => sum + computeShareAmount(amountNum, mode, splits, id), 0),
                           group.currency
                         )}
-                        <span className="text-muted-foreground font-normal"> / {fmtMoney(amountNum, group.currency)}</span>
+                        <span className="text-muted-foreground font-normal"> / {fmtMoney(effectiveAmount, group.currency)}</span>
                       </span>
                     </div>
                   )}
+                </div>
+              )}
+
+              {expenseKind === "pre_advance" && participants.size > 0 && (
+                <div className="mt-3 rounded-xl border border-success/30 bg-success/5 p-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Banknote className="h-4 w-4 text-success" />
+                    <span className="text-xs font-semibold">Pre-advance contributors</span>
+                    <span className="ml-auto text-[10px] text-success">{participants.size}/{participants.size} paid</span>
+                  </div>
+                  <div className="space-y-1 max-h-40 overflow-y-auto">
+                    {group.members.filter((m) => participants.has(m.id)).map((m) => (
+                      <div key={m.id} className="flex items-center gap-2 rounded-lg bg-success/10 px-2 py-1.5">
+                        <span className="min-w-0 flex-1 truncate text-sm">{m.name}</span>
+                        <span className="text-xs font-medium tabular-nums text-success">✓ {fmtMoney(amountNum, group.currency)}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-2 pt-2 border-t border-success/20 flex items-center justify-between text-xs">
+                    <span className="text-muted-foreground">Total added to advance</span>
+                    <span className="font-semibold text-success">{fmtMoney(effectiveAmount, group.currency)}</span>
+                  </div>
                 </div>
               )}
             </div>

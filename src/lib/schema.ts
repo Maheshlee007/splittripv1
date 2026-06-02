@@ -52,6 +52,7 @@ export const ExpenseSchema = z.object({
   date: finiteTimestamp.optional(),
   createdBy: safeStr(64),
   updatedAt: finiteTimestamp,
+  expenseKind: z.enum(["general", "advance_common", "pre_advance"]).optional(),
 }).passthrough();
 
 const ExpenseRequestSchema = z.object({

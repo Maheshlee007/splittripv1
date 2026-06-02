@@ -25,7 +25,7 @@ const personalTabs = [
   { to: "/me", icon: User, label: "Me" },
 ];
 
-function ThemeToggle({ compact = false }: { compact?: boolean }) {
+function ThemeToggle({ compact = false, labels = false }: { compact?: boolean; labels?: boolean }) {
   const { themePref, setThemePref } = useApp();
   if (compact) {
     const Icon = themePref === "light" ? Sun : themePref === "dark" ? Moon : Monitor;
@@ -55,12 +55,13 @@ function ThemeToggle({ compact = false }: { compact?: boolean }) {
             key={o.id}
             onClick={() => setThemePref(o.id)}
             className={cn(
-              "grid h-7 w-7 place-items-center rounded-md transition",
+              labels ? "flex items-center gap-1 rounded-md px-2 py-1 text-[11px] transition" : "grid h-7 w-7 place-items-center rounded-md transition",
               active ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
             )}
             title={o.id[0].toUpperCase() + o.id.slice(1)}
           >
             <Icon className="h-3.5 w-3.5" />
+            {labels && <span className="capitalize">{o.id}</span>}
           </button>
         );
       })}
@@ -113,7 +114,7 @@ function ModeSwitch({ mode, setMode, compact = false }: { mode: AppMode; setMode
 }
 
 export default function AppShell() {
-  const { ready, peers } = useApp();
+  const { ready, peers, themePref } = useApp();
   const loc = useLocation();
   const navigate = useNavigate();
   const launchModeAppliedRef = useRef(false);
@@ -217,6 +218,7 @@ export default function AppShell() {
             </Button>
           )}
           <ThemeToggle compact />
+          <span className="text-[10px] font-medium capitalize text-muted-foreground">{themePref}</span>
         </div>
       </div>
 

@@ -220,6 +220,11 @@ export default function TripsPage() {
                     <div className="mt-0.5 text-[10px] font-normal opacity-80">Manage expenses Alone</div>
                   </button>
                 </div>
+                {syncDisabled && (
+                  <p className="mt-1 text-[11px] text-warning">
+                    Self Track trips are offline-only and cannot be connected to peers later.
+                  </p>
+                )}
               </div>
               <Button className="w-full" onClick={handleCreate} disabled={!name.trim()}>
                 Create trip

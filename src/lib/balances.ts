@@ -1,4 +1,4 @@
-import { Expense, Group, Settlement, Split, SplitMode } from "./types";
+import { Expense, Group, Settlement, Split, SplitMode, ExpenseKind } from "./types";
 
 export interface MemberLedgerRow {
   memberId: string;
@@ -18,6 +18,20 @@ export interface BreakdownRow {
   total: number;
   paidBy: string;
   shares: Record<string, number>;
+}
+
+export function getExpenseKind(e: Expense): ExpenseKind {
+  if (e.expenseKind) return e.expenseKind;
+  return e.isAdvance ? "advance_common" : "general";
+}
+
+export function isPreAdvance(e: Expense): boolean {
+  return getExpenseKind(e) === "pre_advance";
+}
+
+export function isAdvanceExpense(e: Expense): boolean {
+  const kind = getExpenseKind(e);
+  return kind === "advance_common" || kind === "pre_advance";
 }
 
 export function computeShareAmount(amount: number, mode: SplitMode, splits: Split[], memberId: string): number {
@@ -45,6 +59,22 @@ export function computeBalances(group: Group): Record<string, number> {
   for (const m of group.members) net[m.id] = 0;
 
   for (const e of group.expenses) {
+    if (isPreAdvance(e)) {
+      const collector = e.paidBy;
+      const paidSet = new Set((e.advancePayments ?? []).filter((a) => a.hasPaid).map((a) => a.memberId));
+      for (const s of e.splits) {
+        const hasPaid = e.advancePayments ? paidSet.has(s.memberId) : true;
+        if (!hasPaid) continue;
+        const share = computeShareAmount(e.amount, e.splitMode, e.splits, s.memberId);
+        if (!net[s.memberId] && net[s.memberId] !== 0) net[s.memberId] = 0;
+        net[s.memberId] += share;
+        if (collector && collector !== s.memberId) {
+          if (!net[collector] && net[collector] !== 0) net[collector] = 0;
+          net[collector] -= share;
+        }
+      }
+      continue;
+    }
     if (!net[e.paidBy] && net[e.paidBy] !== 0) net[e.paidBy] = 0;
     net[e.paidBy] += e.amount;
     for (const s of e.splits) {
@@ -53,7 +83,7 @@ export function computeBalances(group: Group): Record<string, number> {
       net[s.memberId] -= owed;
     }
     // Advance payments: members who paid their share effectively settle with paidBy
-    if (e.isAdvance && e.advancePayments) {
+    if (isAdvanceExpense(e) && e.advancePayments) {
       for (const ap of e.advancePayments) {
         if (ap.hasPaid && ap.memberId !== e.paidBy) {
           const share = computeShareAmount(e.amount, e.splitMode, e.splits, ap.memberId);
@@ -91,6 +121,22 @@ export function buildMemberLedger(group: Group): MemberLedgerRow[] {
   );
 
   for (const e of group.expenses) {
+    if (isPreAdvance(e)) {
+      const collector = e.paidBy;
+      const paidSet = new Set((e.advancePayments ?? []).filter((a) => a.hasPaid).map((a) => a.memberId));
+      for (const s of e.splits) {
+        const hasPaid = e.advancePayments ? paidSet.has(s.memberId) : true;
+        if (!hasPaid) continue;
+        const share = computeShareAmount(e.amount, e.splitMode, e.splits, s.memberId);
+        if (!rows[s.memberId]) rows[s.memberId] = { memberId: s.memberId, name: group.members.find((m) => m.id === s.memberId)?.name ?? "Unknown", paid: 0, owed: 0, balance: 0, settled: 0, finalBalance: 0 };
+        rows[s.memberId].settled += share;
+        if (collector && collector !== s.memberId) {
+          if (!rows[collector]) rows[collector] = { memberId: collector, name: group.members.find((m) => m.id === collector)?.name ?? "Unknown", paid: 0, owed: 0, balance: 0, settled: 0, finalBalance: 0 };
+          rows[collector].settled -= share;
+        }
+      }
+      continue;
+    }
     if (!rows[e.paidBy]) rows[e.paidBy] = { memberId: e.paidBy, name: group.members.find((m) => m.id === e.paidBy)?.name ?? "Unknown", paid: 0, owed: 0, balance: 0, settled: 0, finalBalance: 0 };
     rows[e.paidBy].paid += e.amount;
     for (const s of e.splits) {
@@ -98,7 +144,7 @@ export function buildMemberLedger(group: Group): MemberLedgerRow[] {
       rows[s.memberId].owed += computeShareAmount(e.amount, e.splitMode, e.splits, s.memberId);
     }
     // Advance payments count as settlements
-    if (e.isAdvance && e.advancePayments) {
+    if (isAdvanceExpense(e) && e.advancePayments) {
       for (const ap of e.advancePayments) {
         if (ap.hasPaid && ap.memberId !== e.paidBy) {
           const share = computeShareAmount(e.amount, e.splitMode, e.splits, ap.memberId);
@@ -124,6 +170,7 @@ export function buildMemberLedger(group: Group): MemberLedgerRow[] {
 
 export function buildExpenseBreakdownRows(group: Group): BreakdownRow[] {
   return [...group.expenses]
+    .filter((e) => !isPreAdvance(e))
     .map((e) => ({
       id: e.id,
       date: (e as any).date ?? e.createdAt,
@@ -163,9 +210,9 @@ export function simplifyDebts(net: Record<string, number>): Transfer[] {
 }
 
 export function totalSpent(g: Group): number {
-  return g.expenses.reduce((a, b) => a + b.amount, 0);
+  return g.expenses.filter((e) => !isPreAdvance(e)).reduce((a, b) => a + b.amount, 0);
 }
 
 export function memberSpent(g: Group, memberId: string): number {
-  return g.expenses.filter((e) => e.paidBy === memberId).reduce((a, b) => a + b.amount, 0);
+  return g.expenses.filter((e) => e.paidBy === memberId && !isPreAdvance(e)).reduce((a, b) => a + b.amount, 0);
 }

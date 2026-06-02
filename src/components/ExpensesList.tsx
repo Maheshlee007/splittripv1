@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Group, Expense } from "@/lib/types";
 import { useApp } from "@/store/AppStore";
 import { fmtMoney, relativeTime } from "@/lib/format";
-import { computeShareAmount } from "@/lib/balances";
+import { computeShareAmount, getExpenseKind, isPreAdvance } from "@/lib/balances";
 import { CATEGORIES, getCategory } from "@/lib/categories";
 import { Trash2, Pencil, Receipt, Image as ImageIcon, Search, X, Banknote } from "lucide-react";
 import { ExpenseDialog } from "./ExpenseDialog";
@@ -26,6 +26,7 @@ export function ExpensesList({ group }: { group: Group }) {
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return [...group.expenses]
+      .filter((e) => !isPreAdvance(e))
       .filter((e) => filterCat === "all" || e.category === filterCat)
       .filter((e) => !q || e.description.toLowerCase().includes(q) || (e.note || "").toLowerCase().includes(q) || memberName(e.paidBy).toLowerCase().includes(q))
       .sort((a, b) => ((b as any).date ?? b.createdAt) - ((a as any).date ?? a.createdAt));
@@ -50,7 +51,7 @@ export function ExpensesList({ group }: { group: Group }) {
     return [...map.values()];
   }, [filtered]);
 
-  if (group.expenses.length === 0) {
+  if (filtered.length === 0) {
     return (
       <EmptyState
         icon={<Receipt className="h-7 w-7" />}
@@ -106,6 +107,7 @@ export function ExpensesList({ group }: { group: Group }) {
               const isMine = e.createdBy === profile.id;
               const canEdit = canManage || isMine;
               const canDelete = canManage;
+              const kind = getExpenseKind(e);
               return (
                 <div key={e.id} className="rounded-xl border border-border bg-card p-3 shadow-card transition-shadow hover:shadow-elevated">
                   <div className="flex items-start gap-3">
@@ -132,7 +134,7 @@ export function ExpensesList({ group }: { group: Group }) {
                       {e.isAdvance && e.advancePayments && (
                         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                           <span className="inline-flex items-center gap-1 rounded-md bg-success/10 px-1.5 py-0.5 text-[10px] font-medium text-success">
-                            <Banknote className="h-3 w-3" /> Advance
+                            <Banknote className="h-3 w-3" /> {kind === "pre_advance" ? "Pre-advance" : "Advance"}
                           </span>
                           <span className="text-[10px] text-muted-foreground">
                             {e.advancePayments.filter(a => a.hasPaid).length}/{e.advancePayments.length} paid

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useApp } from "@/store/AppStore";
 import { PageHeader } from "@/components/PageHeader";
 import { Input } from "@/components/ui/input";
@@ -26,6 +26,7 @@ import { useAppLock } from "@/components/AppLock";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 
 export default function MePage() {
+  const nav = useNavigate();
   const { profile, setProfileFields, themePref, setThemePref } = useApp();
   const [editing, setEditing] = useState(!profile.name);
   const [name, setName] = useState(profile.name);
@@ -49,8 +50,17 @@ export default function MePage() {
 
   const save = () => {
     if (!name.trim()) { toast.error("Display name is required"); return; }
+    const firstSetup = !profile.name?.trim();
     setProfileFields({ name: name.trim(), phone: phone.trim() || undefined, upiId: upi.trim() || undefined });
     toast.success("Profile saved");
+    if (firstSetup) {
+      toast("Want a quick walkthrough?", {
+        action: {
+          label: "How to Use",
+          onClick: () => nav("/how-to"),
+        },
+      });
+    }
     setEditing(false);
   };
 

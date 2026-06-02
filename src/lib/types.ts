@@ -13,6 +13,7 @@ export interface Member {
 }
 
 export type SplitMode = "equal" | "shares" | "exact" | "percent";
+export type ExpenseKind = "general" | "advance_common" | "pre_advance";
 
 export interface Split {
   memberId: string;
@@ -39,6 +40,12 @@ export interface Expense {
   updatedAt: number;
   /** Advance payment: organizer paid upfront, tracking who has reimbursed their share */
   isAdvance?: boolean;
+  /**
+   * general: normal expense
+   * advance_common: current advance flow (included in expense breakdown + advance tracking)
+   * pre_advance: advance top-up only (excluded from expense breakdown/balances math)
+   */
+  expenseKind?: ExpenseKind;
   /** Per-member advance payment status (only when isAdvance=true) */
   advancePayments?: AdvancePayment[];
 }

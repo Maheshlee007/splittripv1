@@ -8,6 +8,24 @@ import { Label } from "@/components/ui/label";
 import { Plus, Crown, Shield, User as UserIcon, Trash2, Check, X, Clock } from "lucide-react";
 import { useConfirm } from "./ConfirmDialog";
 import { toast } from "sonner";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+
+function MemberName({ name }: { name: string }) {
+  const likelyTruncated = name.length > 14;
+  if (!likelyTruncated) return <span className="truncate text-sm font-medium">{name}</span>;
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button type="button" className="min-w-0 max-w-[140px] truncate text-left text-sm font-medium underline-offset-2 hover:underline">
+          {name}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-auto max-w-[80vw] p-2 text-xs">
+        {name}
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 export function MembersList({ group, onlineMembers = [] }: { group: Group, onlineMembers?: string[] }) {
   const { addMember, removeMember, setRole, profile, myRole, approveMember, rejectMember, requestLeave, clearLeaveRequest } = useApp();
@@ -108,13 +126,17 @@ export function MembersList({ group, onlineMembers = [] }: { group: Group, onlin
             const isGroupOwner = m.id === group.ownerId;
             const isOnline = onlineMembers.includes(m.id);
             return (
-              <div key={m.id} className={`flex items-center gap-3 px-3 py-2.5 ${idx > 0 ? "border-t border-border" : ""}`}>
+              <div key={m.id} className={`flex items-start gap-3 px-3 py-2.5 md:items-center ${idx > 0 ? "border-t border-border" : ""}`}>
                 <div className="grid h-9 w-9 place-items-center rounded-full bg-accent text-accent-foreground text-sm font-semibold">
                   {m.name.charAt(0).toUpperCase()}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5">
-                    <span className="truncate text-sm font-medium">{m.name}</span>
+                  <div className="flex items-center gap-1.5 md:flex-wrap">
+                    <MemberName name={m.name} />
+                    {isMe && <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-primary">you</span>}
+                    {m.leaveRequested && <span className="rounded bg-warning/15 px-1.5 py-0.5 text-[10px] font-medium text-warning">leave requested</span>}
+                  </div>
+                  <div className="mt-0.5 flex items-center gap-1.5">
                     {isOnline ? (
                       <>
                         <span
@@ -132,8 +154,6 @@ export function MembersList({ group, onlineMembers = [] }: { group: Group, onlin
                         <span className="text-[10px] font-medium text-muted-foreground">offline</span>
                       </>
                     )}
-                    {isMe && <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-primary">you</span>}
-                    {m.leaveRequested && <span className="rounded bg-warning/15 px-1.5 py-0.5 text-[10px] font-medium text-warning">leave requested</span>}
                   </div>
                   {(m.phone || m.upiId) && (
                     <div className="truncate text-xs text-muted-foreground">
@@ -141,61 +161,63 @@ export function MembersList({ group, onlineMembers = [] }: { group: Group, onlin
                     </div>
                   )}
                 </div>
-                {isGroupOwner ? (
-                  <span className="flex items-center gap-1 rounded-full bg-warning/15 px-2 py-1 text-[10px] font-medium text-warning">
-                    <Crown className="h-3 w-3" /> owner
-                  </span>
-                ) : isOwner ? (
-                  <div className="inline-flex overflow-hidden rounded-full border border-border text-[10px]">
+                <div className="ml-auto flex flex-col items-end gap-1 md:flex-row md:items-center">
+                  {canManage && !isMe && !isGroupOwner && (
                     <button
-                      onClick={() => m.role !== "member" && setRole(group.id, m.id, "member")}
-                      className={`flex items-center gap-1 px-2 py-1 ${m.role === "member" ? "bg-secondary text-foreground" : "text-muted-foreground hover:bg-secondary/50"}`}
+                      onClick={async () => {
+                        const ok = await confirm({
+                          title: `Remove ${m.name}?`,
+                          description: "Their splits will be cleaned up. Past expenses they paid will be reassigned to the trip owner.",
+                          confirmText: "Remove",
+                          destructive: true,
+                        });
+                        if (ok) removeMember(group.id, m.id);
+                      }}
+                      className="grid h-7 w-7 place-items-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                     >
-                      <UserIcon className="h-3 w-3" /> member
+                      <Trash2 className="h-3.5 w-3.5" />
                     </button>
+                  )}
+                  {isMe && !isGroupOwner && !m.leaveRequested && (
                     <button
-                      onClick={() => m.role !== "admin" && setRole(group.id, m.id, "admin")}
-                      className={`flex items-center gap-1 px-2 py-1 ${m.role === "admin" ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-secondary/50"}`}
+                      onClick={async () => {
+                        const ok = await confirm({ title: "Request to leave this trip?", description: "The owner will approve removal so balances stay correct.", confirmText: "Request leave" });
+                        if (ok) { requestLeave(group.id); toast.success("Leave request sent"); }
+                      }}
+                      className="grid h-7 w-7 place-items-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                     >
-                      <Shield className="h-3 w-3" /> admin
+                      <Trash2 className="h-3.5 w-3.5" />
                     </button>
-                  </div>
-                ) : (
-                  <span className={`flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-medium ${m.role === "admin" ? "bg-primary/15 text-primary" : "bg-secondary text-muted-foreground"}`}>
-                    {m.role === "admin" ? <Shield className="h-3 w-3" /> : <UserIcon className="h-3 w-3" />}
-                    {m.role}
-                  </span>
-                )}
-                {canManage && m.leaveRequested && !isGroupOwner && (
-                  <Button size="sm" variant="ghost" className="h-7 text-[11px]" onClick={() => clearLeaveRequest(group.id, m.id)}>Keep</Button>
-                )}
-                {canManage && !isMe && !isGroupOwner && (
-                  <button
-                    onClick={async () => {
-                      const ok = await confirm({
-                        title: `Remove ${m.name}?`,
-                        description: "Their splits will be cleaned up. Past expenses they paid will be reassigned to the trip owner.",
-                        confirmText: "Remove",
-                        destructive: true,
-                      });
-                      if (ok) removeMember(group.id, m.id);
-                    }}
-                    className="grid h-7 w-7 place-items-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                )}
-                {isMe && !isGroupOwner && !m.leaveRequested && (
-                  <button
-                    onClick={async () => {
-                      const ok = await confirm({ title: "Request to leave this trip?", description: "The owner will approve removal so balances stay correct.", confirmText: "Request leave" });
-                      if (ok) { requestLeave(group.id); toast.success("Leave request sent"); }
-                    }}
-                    className="grid h-7 w-7 place-items-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                )}
+                  )}
+                  {canManage && m.leaveRequested && !isGroupOwner && (
+                    <Button size="sm" variant="ghost" className="h-7 text-[11px]" onClick={() => clearLeaveRequest(group.id, m.id)}>Keep</Button>
+                  )}
+                  {isGroupOwner ? (
+                    <span className="flex items-center gap-1 rounded-full bg-warning/15 px-2 py-1 text-[10px] font-medium text-warning">
+                      <Crown className="h-3 w-3" /> owner
+                    </span>
+                  ) : isOwner ? (
+                    <div className="inline-flex overflow-hidden rounded-full border border-border text-[10px]">
+                      <button
+                        onClick={() => m.role !== "member" && setRole(group.id, m.id, "member")}
+                        className={`flex items-center gap-1 px-2 py-1 ${m.role === "member" ? "bg-secondary text-foreground" : "text-muted-foreground hover:bg-secondary/50"}`}
+                      >
+                        <UserIcon className="h-3 w-3" /> member
+                      </button>
+                      <button
+                        onClick={() => m.role !== "admin" && setRole(group.id, m.id, "admin")}
+                        className={`flex items-center gap-1 px-2 py-1 ${m.role === "admin" ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-secondary/50"}`}
+                      >
+                        <Shield className="h-3 w-3" /> admin
+                      </button>
+                    </div>
+                  ) : (
+                    <span className={`flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-medium ${m.role === "admin" ? "bg-primary/15 text-primary" : "bg-secondary text-muted-foreground"}`}>
+                      {m.role === "admin" ? <Shield className="h-3 w-3" /> : <UserIcon className="h-3 w-3" />}
+                      {m.role}
+                    </span>
+                  )}
+                </div>
               </div>
             );
           })}

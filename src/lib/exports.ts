@@ -3,7 +3,7 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { toPng } from "html-to-image";
 import { Group } from "./types";
-import { buildExpenseBreakdownRows, buildMemberLedger, computeShareAmount, totalSpent } from "./balances";
+import { buildExpenseBreakdownRows, buildMemberLedger, computeShareAmount, totalSpent, isAdvanceExpense, getExpenseKind } from "./balances";
 import { fmtDate, fmtMoney } from "./format";
 import { getCategory } from "./categories";
 
@@ -28,7 +28,7 @@ function getExportMetrics(g: Group): ExportMetrics {
   const nonAdvanceSpentByMember: Record<string, number> = {};
   for (const m of active) nonAdvanceSpentByMember[m.id] = 0;
   for (const e of g.expenses) {
-    if (e.isAdvance) continue;
+    if (isAdvanceExpense(e)) continue;
     nonAdvanceSpentByMember[e.paidBy] = (nonAdvanceSpentByMember[e.paidBy] ?? 0) + e.amount;
   }
 
@@ -40,7 +40,7 @@ function getExportMetrics(g: Group): ExportMetrics {
     unpaidMap[m.id] = false;
     ownerExtraMap[m.id] = 0;
   }
-  const advanceExpenses = g.expenses.filter((x) => x.isAdvance);
+  const advanceExpenses = g.expenses.filter((x) => isAdvanceExpense(x));
   for (const e of advanceExpenses) {
     let collected = 0;
     for (const s of e.splits) {
@@ -85,10 +85,11 @@ export function exportExcel(g: Group): void {
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summary), "Summary");
 
   const expRows = [
-    ["Date", "Description", "Category", "Paid by", `Amount (${g.currency})`, "Split", "Note"],
+    ["Date", "Description", "Type", "Category", "Paid by", `Amount (${g.currency})`, "Split", "Note"],
     ...g.expenses.map((e) => [
       fmtDate(e.createdAt),
       e.description,
+      getExpenseKind(e),
       getCategory(e.category).label,
       memberName(g, e.paidBy),
       e.amount,
@@ -121,7 +122,7 @@ export function exportExcel(g: Group): void {
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(matrix), "Trip breakdown");
 
   if (metrics.advanceExpenses.length) {
-    const advanceRows = [["Description", "Date", `Total (${g.currency})`, "Collected", "Pending", "Paid by", "Per-member status"]];
+    const advanceRows = [["Description", "Type", "Date", `Total (${g.currency})`, "Collected", "Pending", "Paid by", "Per-member status"]];
     for (const e of metrics.advanceExpenses) {
       const collectedCount = e.advancePayments?.filter((a) => a.hasPaid).length ?? 0;
       const totalCount = e.advancePayments?.length ?? e.splits.length;
@@ -134,6 +135,7 @@ export function exportExcel(g: Group): void {
         .join("; ");
       advanceRows.push([
         e.description,
+        getExpenseKind(e),
         fmtDate(e.createdAt),
         String(e.amount),
         `${collectedCount}/${totalCount}`,
@@ -253,7 +255,7 @@ function buildPDF(g: Group): jsPDF {
       startY: currentY + 14,
       head: [["Description", `Total (${g.currency})`, ...active.map((m) => abbreviateName(m.name, nameMaxLen))]],
       body: metrics.advanceExpenses.map((e) => [
-        e.description,
+        `${e.description} (${getExpenseKind(e)})`,
         fmtMoney(e.amount, g.currency),
         ...active.map((m) => {
           const inSplit = e.splits.some((s) => s.memberId === m.id);
@@ -305,6 +307,7 @@ export function buildJSONString(g: Group): string {
     },
     advancePayments: metrics.advanceExpenses.map((e) => ({
       description: e.description,
+      expenseType: getExpenseKind(e),
       total: e.amount,
       paidBy: memberName(g, e.paidBy),
       members: e.splits.map((s) => {
@@ -357,7 +360,7 @@ export function buildWhatsAppText(g: Group): string {
   if (metrics.advanceExpenses.length) {
     lines.push("", "*Advance payments*");
     for (const e of metrics.advanceExpenses) {
-      lines.push(`• ${e.description} (${fmtMoney(e.amount, g.currency)})`);
+      lines.push(`• ${e.description} [${getExpenseKind(e)}] (${fmtMoney(e.amount, g.currency)})`);
       for (const s of e.splits) {
         const share = computeShareAmount(e.amount, e.splitMode, e.splits, s.memberId);
         const ap = e.advancePayments?.find((a) => a.memberId === s.memberId);
