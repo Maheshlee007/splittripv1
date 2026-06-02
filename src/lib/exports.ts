@@ -74,6 +74,22 @@ function exportMoney(amount: number, currency: string): string {
   return `${currency} ${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+function applyColumnWidths(ws: XLSX.WorkSheet, rows: Array<Array<string | number>>) {
+  const colCount = Math.max(...rows.map((r) => r.length), 0);
+  ws["!cols"] = Array.from({ length: colCount }, (_, index) => {
+    const maxLen = rows.reduce((max, row) => {
+      const cell = row[index];
+      const len = cell == null ? 0 : String(cell).split("\n").reduce((m, part) => Math.max(m, part.length), 0);
+      return Math.max(max, len);
+    }, 0);
+    return { wch: Math.min(Math.max(maxLen + 2, 10), 28) };
+  });
+}
+
 function pdfMoney(amount: number): string {
   return amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
@@ -81,8 +97,9 @@ function pdfMoney(amount: number): string {
 export function exportExcel(g: Group): void {
   const wb = XLSX.utils.book_new();
   const metrics = getExportMetrics(g);
+  const active = metrics.active;
 
-  const summary = [
+  const summary: Array<Array<string | number>> = [
     ["Trip", g.name],
     ["Code", g.id],
     ["Currency", g.currency],
@@ -90,69 +107,82 @@ export function exportExcel(g: Group): void {
     ["Total spent", totalSpent(g)],
     ["Generated", new Date().toLocaleString()],
   ];
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summary), "Summary");
+  const summarySheet = XLSX.utils.aoa_to_sheet(summary);
+  applyColumnWidths(summarySheet, summary);
+  XLSX.utils.book_append_sheet(wb, summarySheet, "Summary");
 
-  const expRows = [
-    ["Date", "Description", "Type", "Category", "Paid by", `Amount (${g.currency})`, "Split", "Note"],
+  const expRows: Array<Array<string | number>> = [
+    ["Date", "Description", "Type", "Category", "Paid by", `Amount (${g.currency})`, "Split mode", "Note", ...active.map((m) => m.name)],
     ...g.expenses.map((e) => [
       fmtDate(e.createdAt),
       e.description,
       getExpenseKind(e),
       getCategory(e.category).label,
       memberName(g, e.paidBy),
-      e.amount,
-      e.splits.map((s) => `${memberName(g, s.memberId)}:${computeShareAmount(e.amount, e.splitMode, e.splits, s.memberId).toFixed(2)}`).join("; "),
+      round2(e.amount),
+      e.splitMode,
       e.note ?? "",
+      ...active.map((m) => {
+        const inSplit = e.splits.some((s) => s.memberId === m.id);
+        if (!inSplit) return "-";
+        return round2(computeShareAmount(e.amount, e.splitMode, e.splits, m.id));
+      }),
     ]),
   ];
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(expRows), "Expenses");
+  const expensesSheet = XLSX.utils.aoa_to_sheet(expRows);
+  applyColumnWidths(expensesSheet, expRows);
+  XLSX.utils.book_append_sheet(wb, expensesSheet, "Expenses");
 
   const ledger = metrics.ledger;
-  const balRows = [["Member", "Individual spent", "Share", "Balance", `Final (${g.currency})`], ...ledger.map((r) => [r.name, r.paid, r.owed, r.balance, r.finalBalance])];
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(balRows), "Balances");
+  const balRows: Array<Array<string | number>> = [["Member", "Individual spent", "Share", "Balance", `Final (${g.currency})`], ...ledger.map((r) => [r.name, round2(r.paid), round2(r.owed), round2(r.balance), round2(r.finalBalance)])];
+  const balancesSheet = XLSX.utils.aoa_to_sheet(balRows);
+  applyColumnWidths(balancesSheet, balRows);
+  XLSX.utils.book_append_sheet(wb, balancesSheet, "Balances");
 
-  const active = metrics.active;
-  const matrix = [["Date", "Category / desc", `Total (${g.currency})`, ...active.map((m) => m.name)],
-    ...metrics.rows.map((r) => [fmtDate(r.date), `${getCategory(r.category).label} - ${r.description}`, r.total, ...active.map((m) => r.shares[m.id] ?? 0)]),
-    ["", "Spent per person", totalSpent(g), ...active.map((m) => -(ledger.find((r) => r.memberId === m.id)?.owed ?? 0))],
-    ["", "Individual spent", "", ...active.map((m) => metrics.nonAdvanceSpentByMember[m.id] ?? 0)],
+  const matrix: Array<Array<string | number>> = [["Date", "Category / desc", `Total (${g.currency})`, ...active.map((m) => m.name)],
+    ...metrics.rows.map((r) => [fmtDate(r.date), `${getCategory(r.category).label} - ${r.description}`, round2(r.total), ...active.map((m) => round2(r.shares[m.id] ?? 0))]),
+    ["", "Spent per person", round2(totalSpent(g)), ...active.map((m) => round2(-(ledger.find((r) => r.memberId === m.id)?.owed ?? 0)))],
+    ["", "Individual spent", "", ...active.map((m) => round2(metrics.nonAdvanceSpentByMember[m.id] ?? 0))],
     ["", "Total advance", "", ...active.map((m) => {
       const paid = metrics.advanceByMember.paidMap[m.id] ?? 0;
       const unpaid = metrics.advanceByMember.unpaidMap[m.id] ?? false;
       const extra = metrics.advanceByMember.ownerExtraMap[m.id] ?? 0;
-      if (paid > 0 && extra > 0) return `${paid.toFixed(2)}\n(extra ${extra.toFixed(2)})`;
-      if (paid > 0) return paid;
+      if (paid > 0 && extra > 0) return `${round2(paid).toFixed(2)}\n(extra ${round2(extra).toFixed(2)})`;
+      if (paid > 0) return round2(paid);
       if (unpaid) return "Not paid";
       return "-";
     })],
-    ["", "Balances", "", ...active.map((m) => ledger.find((r) => r.memberId === m.id)?.finalBalance ?? 0)],
+    ["", "Balances", "", ...active.map((m) => round2(ledger.find((r) => r.memberId === m.id)?.finalBalance ?? 0))],
   ];
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(matrix), "Trip breakdown");
+  const breakdownSheet = XLSX.utils.aoa_to_sheet(matrix);
+  applyColumnWidths(breakdownSheet, matrix);
+  XLSX.utils.book_append_sheet(wb, breakdownSheet, "Trip breakdown");
 
   if (metrics.advanceExpenses.length) {
-    const advanceRows = [["Description", "Type", "Date", `Total (${g.currency})`, "Collected", "Pending", "Paid by", "Per-member status"]];
+    const advanceRows: Array<Array<string | number>> = [["Description", "Type", "Date", `Total (${g.currency})`, "Collected", "Pending", "Paid by", ...active.map((m) => m.name)]];
     for (const e of metrics.advanceExpenses) {
       const collectedCount = e.advancePayments?.filter((a) => a.hasPaid).length ?? 0;
       const totalCount = e.advancePayments?.length ?? e.splits.length;
-      const status = e.splits
-        .map((s) => {
-          const share = computeShareAmount(e.amount, e.splitMode, e.splits, s.memberId);
-          const ap = e.advancePayments?.find((a) => a.memberId === s.memberId);
-          return `${memberName(g, s.memberId)}:${ap?.hasPaid ? `Paid ${share.toFixed(2)}` : "Not paid"}`;
-        })
-        .join("; ");
       advanceRows.push([
         e.description,
         getExpenseKind(e),
         fmtDate(e.createdAt),
-        String(e.amount),
+        round2(e.amount),
         `${collectedCount}/${totalCount}`,
         `${Math.max(totalCount - collectedCount, 0)}`,
         memberName(g, e.paidBy),
-        status,
+        ...active.map((m) => {
+          const inSplit = e.splits.some((s) => s.memberId === m.id);
+          if (!inSplit) return "-";
+          const share = round2(computeShareAmount(e.amount, e.splitMode, e.splits, m.id));
+          const ap = e.advancePayments?.find((a) => a.memberId === m.id);
+          return ap?.hasPaid ? `Paid\n${share.toFixed(2)}` : "Not paid";
+        }),
       ]);
     }
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(advanceRows), "Advance payments");
+    const advanceSheet = XLSX.utils.aoa_to_sheet(advanceRows);
+    applyColumnWidths(advanceSheet, advanceRows);
+    XLSX.utils.book_append_sheet(wb, advanceSheet, "Advance payments");
   }
 
   XLSX.writeFile(wb, `${g.name.replace(/[^\w]+/g, "_")}_${g.id}.xlsx`);
