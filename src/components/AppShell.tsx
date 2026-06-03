@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Outlet, NavLink, useLocation, useNavigate } from "react-router-dom";
-import { Home, Receipt, Inbox, Scale, User, Wifi, WifiOff, Sun, Moon, Monitor, ChevronLeft, ChevronRight, Radio, Smartphone, X, LayoutDashboard, HandCoins, Users2, Wallet } from "lucide-react";
+import { Home, Receipt, Inbox, Scale, User, Wifi, WifiOff, Sun, Moon, Monitor, ChevronLeft, ChevronRight, Radio, Smartphone, X, LayoutDashboard, HandCoins, Users2, Wallet,BookOpenText } from "lucide-react";
 import { useApp } from "@/store/AppStore";
 import { onSyncStatus, type SyncStatus } from "@/lib/sync";
 import { cn } from "@/lib/utils";
@@ -14,7 +14,8 @@ const groupTabs = [
   { to: "/", icon: Home, label: "Trips", end: true },
   { to: "/expenses", icon: Receipt, label: "Expenses" },
   { to: "/requests", icon: Inbox, label: "Requests" },
-  { to: "/balances", icon: Scale, label: "Balances" },
+  // { to: "/balances", icon: Scale, label: "Balances" },
+  { to: "/how-to", icon: BookOpenText, label: "Guide" },
   { to: "/me", icon: User, label: "Me" },
 ];
 

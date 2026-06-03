@@ -137,8 +137,8 @@ export const DashboardView = forwardRef<HTMLDivElement, { group: Group }>(({ gro
               <PopoverContent className="w-[300px] text-xs leading-relaxed">
                 <p className="font-semibold">Balance formula</p>
                 <p className="mt-1">Member balance = Individual spent + Total advance - Spent per person.</p>
-                <p className="mt-1">Owner follows the same formula. Owner's "extra advance" means advance paid by owner that members have not yet marked as paid, and it is included in Total advance.</p>
-                <p className="mt-1">Final balances also include verified settlement adjustments.</p>
+                <p className="mt-1">Owner follows the same formula. Owner's "extra advance" means advance paid by owner that members have not yet marked as paid, and it is included in Total advance.- sum of all pre-advances</p>
+                {/* <p className="mt-1">Final balances also include verified settlement adjustments.</p> */}
               </PopoverContent>
             </Popover>
           </div>
@@ -240,8 +240,8 @@ export const DashboardView = forwardRef<HTMLDivElement, { group: Group }>(({ gro
           </div>
         )}
         <p className="mt-2 text-[11px] text-muted-foreground">
-          Formula: Balance = Individual spent + Total advance - Spent per person.
-          <span className="block">For owner, Total advance includes owner extra advance (advance not yet paid back by members).</span>
+          Member Formula: Balance = Individual spent + Total advance(common Shared Advances + extra Advances not yet paid back by members) - Spent per person.
+          <span className="block ">For owner- Balance = Individual spent + Total advance(common Shared Advances + extra Advances not yet paid back by members) - Spent per person -Sum(Pre-Advances)  </span>
         </p>
       </section>
 
