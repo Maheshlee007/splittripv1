@@ -56,7 +56,18 @@ export function ShareCodeDialog({
   const share = async () => {
     const text = `Join my trip "${groupName}" on SplitTrip → ${url}\nTrip Code: ${groupId}\nSecret: ${inviteToken || groupId}`;
     if (navigator.share) {
-      try { await navigator.share({ title: "Join my trip", text, url }); return; } catch {}
+      try {
+        if (qr) {
+          const qrBlob = await fetch(qr).then((r) => r.blob());
+          const qrFile = new File([qrBlob], `${groupName.replace(/[^\w]+/g, "_")}_invite_qr.png`, { type: "image/png" });
+          if (navigator.canShare?.({ files: [qrFile] })) {
+            await navigator.share({ title: "Join my trip", text, files: [qrFile] });
+            return;
+          }
+        }
+        await navigator.share({ title: "Join my trip", text, url });
+        return;
+      } catch {}
     }
     await navigator.clipboard.writeText(text);
     toast.success("Invite copied");

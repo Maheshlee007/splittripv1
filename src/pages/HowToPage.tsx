@@ -86,13 +86,27 @@ export default function HowToPage() {
           </p>
         </Step>
 
-        <Step num={5} title="Requests &amp; approvals">
+        <Step num={5} title="Understand balances formula" image="/screenshots/05-trip-detail.png" alt="Trip breakdown formula help">
+          <p>
+            In <strong>Trip breakdown</strong>, each member follows one formula: <strong>Balance = Individual spent + Total advance - Spent per person</strong>.
+          </p>
+          <ul className="list-disc pl-5 space-y-1">
+            <li><strong>Individual spent</strong>: normal expenses they paid directly.</li>
+            <li><strong>Total advance</strong>: advance collection impact (including owner extra advance not yet collected) plus settlement adjustments.</li>
+            <li><strong>Spent per person</strong>: their equal/share-based split across trip expenses.</li>
+          </ul>
+          <p>
+            Positive final balance means they should receive money. Negative means they owe.
+          </p>
+        </Step>
+
+        <Step num={6} title="Requests &amp; approvals">
           <p>
             Non-owner members can submit an expense as a <strong>request</strong>. Owner/admin approves or rejects it from the <em>Requests</em> tab. Approved requests become normal expenses and appear in Activity for everyone.
           </p>
         </Step>
 
-        <Step num={6} title="Personal mode" image="/screenshots/03-personal-dashboard.png" alt="Personal dashboard">
+        <Step num={7} title="Personal mode" image="/screenshots/03-personal-dashboard.png" alt="Personal dashboard">
           <p>
             Switch the sidebar toggle to <strong>Personal</strong> for a private expense tracker that is never synced to peers. You get a monthly dashboard, category chart, recent transactions, and a yearly overview.
           </p>
@@ -101,7 +115,7 @@ export default function HowToPage() {
           </p>
         </Step>
 
-        <Step num={7} title="Lock the app" image="/screenshots/08-passcode-setup.png" alt="Set passcode dialog">
+        <Step num={8} title="Lock the app" image="/screenshots/08-passcode-setup.png" alt="Set passcode dialog">
           <p>
             On the Me tab, the <strong>App lock</strong> section lets you enable native biometric (Touch ID / Face ID / Windows Hello / Android fingerprint) or a 4–6 digit passcode.
           </p>
@@ -113,7 +127,7 @@ export default function HowToPage() {
           </ul>
         </Step>
 
-        <Step num={8} title="Backup &amp; restore">
+        <Step num={9} title="Backup &amp; restore">
           <p>
             From <strong>Me → Backup &amp; restore</strong> tap <em>Export all</em> to download a single JSON file containing your profile, every trip, personal expenses, budgets, payment methods, and lendings.
           </p>
@@ -125,7 +139,7 @@ export default function HowToPage() {
           </p>
         </Step>
 
-        <Step num={9} title="Install as an app">
+        <Step num={10} title="Install as an app">
           <p>
             On mobile, use your browser's <em>Add to home screen</em> option. On desktop Chrome/Edge, click the install icon in the URL bar. Installed PWAs get truly persistent storage and a faster, full-screen experience.
           </p>

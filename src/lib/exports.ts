@@ -134,7 +134,7 @@ export function exportExcel(g: Group): void {
   XLSX.utils.book_append_sheet(wb, expensesSheet, "Expenses");
 
   const ledger = metrics.ledger;
-  const balRows: Array<Array<string | number>> = [["Member", "Individual spent", "Share", "Balance", `Final (${g.currency})`], ...ledger.map((r) => [r.name, round2(r.paid), round2(r.owed), round2(r.balance), round2(r.finalBalance)])];
+  const balRows: Array<Array<string | number>> = [["Member", "Total spent (+owner)", "Share / spent per person (-)", "Advance / settlement adj", `Final balance (${g.currency})`], ...ledger.map((r) => [r.name, round2(r.paid), round2(-r.owed), round2(r.settled), round2(r.finalBalance)])];
   const balancesSheet = XLSX.utils.aoa_to_sheet(balRows);
   applyColumnWidths(balancesSheet, balRows);
   XLSX.utils.book_append_sheet(wb, balancesSheet, "Balances");
@@ -153,6 +153,7 @@ export function exportExcel(g: Group): void {
       return "-";
     })],
     ["", "Balances", "", ...active.map((m) => round2(ledger.find((r) => r.memberId === m.id)?.finalBalance ?? 0))],
+    ["", "Formula", "", ...active.map((_, idx) => (idx === 0 ? "Balance = Individual spent + Total advance - Spent per person" : ""))],
   ];
   const breakdownSheet = XLSX.utils.aoa_to_sheet(matrix);
   applyColumnWidths(breakdownSheet, matrix);
@@ -253,11 +254,11 @@ function buildPDF(g: Group): jsPDF {
 
   autoTable(doc, {
     startY: lastY + 14,
-    head: [["Member", "Spent", "Share", "Settled", "Final Balance"]],
+    head: [["Member", "Total spent (+owner)", "Share / spent per person (-)", "Advance / settlement adj", "Final balance"]],
     body: ledger.map((r) => [
       r.name,
       pdfMoney(r.paid),
-      pdfMoney(r.owed),
+      `-${pdfMoney(r.owed)}`,
       r.settled !== 0 ? pdfMoney(r.settled) : "-",
       `${r.finalBalance > 0 ? "+" : r.finalBalance < 0 ? "-" : ""}${pdfMoney(Math.abs(r.finalBalance))}`,
     ]),
