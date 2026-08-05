@@ -1,5 +1,5 @@
 import { openDB, DBSchema, IDBPDatabase } from "idb";
-import { Group, Profile, PersonalExpense, PersonalBudget, CustomPaymentMethod, Lending } from "./types";
+import { Group, Profile, PersonalExpense, PersonalBudget, CustomPaymentMethod, CustomCategory, Lending } from "./types";
 
 interface SplitTripDB extends DBSchema {
   groups: { key: string; value: Group };
@@ -21,6 +21,11 @@ interface SplitTripDB extends DBSchema {
   personal_payment_methods: {
     key: string;
     value: CustomPaymentMethod;
+  };
+  /** User-added categories only — built-ins live in lib/categories.ts. */
+  personal_categories: {
+    key: string;
+    value: CustomCategory;
   };
   lendings: {
     key: string;
@@ -47,7 +52,7 @@ const DEFAULT_PAYMENT_METHODS: CustomPaymentMethod[] = [
 
 function db() {
   if (!dbPromise) {
-    dbPromise = openDB<SplitTripDB>("splittrip", 3, {
+    dbPromise = openDB<SplitTripDB>("splittrip", 4, {
       upgrade(db, oldVersion) {
         if (oldVersion < 1) {
           db.createObjectStore("groups", { keyPath: "id" });
@@ -70,6 +75,9 @@ function db() {
           lStore.createIndex("by_status", "status");
           lStore.createIndex("by_person", "personName");
         }
+        if (oldVersion < 4) {
+          db.createObjectStore("personal_categories", { keyPath: "id" });
+        }
       },
       blocked() {
         console.warn("[SplitTrip] DB upgrade blocked — close other tabs");
@@ -89,6 +97,7 @@ const LS_THEME = "splittrip:theme";
 const LS_PERSONAL_EXPENSES = "splittrip:personal_expenses";
 const LS_PERSONAL_BUDGETS = "splittrip:personal_budgets";
 const LS_PAYMENT_METHODS = "splittrip:payment_methods";
+const LS_CATEGORIES = "splittrip:categories";
 const LS_LENDINGS = "splittrip:lendings";
 
 function lsGet<T>(key: string, fallback: T): T {
@@ -254,6 +263,30 @@ export async function savePaymentMethod(pm: CustomPaymentMethod): Promise<void> 
 export async function deletePaymentMethod(id: string): Promise<void> {
   try { await (await db()).delete("personal_payment_methods", id); } catch { /* noop */ }
   lsRemoveById<CustomPaymentMethod>(LS_PAYMENT_METHODS, id);
+}
+
+/* ---------- Categories (user-added only) ---------- */
+
+export async function loadCategories(): Promise<CustomCategory[]> {
+  try {
+    const items = await (await db()).getAll("personal_categories");
+    if (items.length > 0) return items;
+    const ls = lsGet<CustomCategory[]>(LS_CATEGORIES, []);
+    for (const c of ls) await (await db()).put("personal_categories", c);
+    return ls;
+  } catch {
+    return lsGet<CustomCategory[]>(LS_CATEGORIES, []);
+  }
+}
+
+export async function saveCategory(c: CustomCategory): Promise<void> {
+  try { await (await db()).put("personal_categories", c); } catch { /* noop */ }
+  lsUpsertById(LS_CATEGORIES, c);
+}
+
+export async function deleteCategory(id: string): Promise<void> {
+  try { await (await db()).delete("personal_categories", id); } catch { /* noop */ }
+  lsRemoveById<CustomCategory>(LS_CATEGORIES, id);
 }
 
 /* ---------- Lendings ---------- */

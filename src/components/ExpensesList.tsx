@@ -3,7 +3,7 @@ import { Group, Expense } from "@/lib/types";
 import { useApp } from "@/store/AppStore";
 import { fmtMoney, relativeTime } from "@/lib/format";
 import { computeShareAmount, getExpenseKind, isPreAdvance } from "@/lib/balances";
-import { CATEGORIES, getCategory } from "@/lib/categories";
+import { useCategories, getCategory } from "@/lib/categories";
 import { Trash2, Pencil, Receipt, Image as ImageIcon, Search, X, Banknote } from "lucide-react";
 import { ExpenseDialog } from "./ExpenseDialog";
 import { EmptyState } from "./EmptyState";
@@ -19,9 +19,17 @@ export function ExpensesList({ group }: { group: Group }) {
   const [viewBill, setViewBill] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [filterCat, setFilterCat] = useState<string>("all");
+  const allCategories = useCategories();
   const role = myRole(group.id);
   const canManage = role === "owner" || role === "admin";
   const memberName = (id: string) => group.members.find((m) => m.id === id)?.name ?? "?";
+
+  // Filter chips: every category (incl. user-added ones). "Not counted" categories
+  // are meaningless in a split, so they only appear if this trip already uses one.
+  const filterCategories = useMemo(() => {
+    const used = new Set(group.expenses.map((e) => e.category));
+    return allCategories.filter((c) => !c.excludeFromTotal || used.has(c.id));
+  }, [allCategories, group.expenses]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -76,7 +84,7 @@ export function ExpensesList({ group }: { group: Group }) {
         </div>
         <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
           <button onClick={() => setFilterCat("all")} className={cn("shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium", filterCat === "all" ? "bg-primary text-primary-foreground" : "bg-secondary text-muted-foreground")}>All</button>
-          {CATEGORIES.map((c) => {
+          {filterCategories.map((c) => {
             const Icon = c.icon;
             const active = filterCat === c.id;
             return (

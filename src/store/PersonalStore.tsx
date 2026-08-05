@@ -5,6 +5,8 @@ import {
   loadLendings, saveLending, deleteLending as deleteLendFromDB,
   loadPaymentMethods, savePaymentMethod, deletePaymentMethod as deletePMFromDB,
 } from "@/lib/storage";
+import { initCategories, isExcludedCategory, useCategories } from "@/lib/categories";
+import { setPaymentMethodRegistry } from "@/lib/personal-utils";
 
 interface PersonalState {
   expenses: PersonalExpense[];
@@ -23,6 +25,10 @@ interface PersonalState {
   getYearTotals: (year: number) => Record<string, number>;
   getCategoryBreakdown: (monthKey: string) => Record<string, number>;
   getPaymentBreakdown: (monthKey: string) => Record<string, number>;
+  /** Sum of a month's expenses, skipping categories flagged excludeFromTotal. */
+  getMonthTotal: (monthKey: string) => number;
+  /** Per-category amounts that were kept out of the total (e.g. CC Paid). */
+  getExcludedBreakdown: (monthKey: string) => Record<string, number>;
 }
 
 const PersonalContext = createContext<PersonalState | null>(null);
@@ -33,14 +39,23 @@ export function PersonalStoreProvider({ children }: { children: ReactNode }) {
   const [paymentMethods, setPaymentMethods] = useState<CustomPaymentMethod[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Re-derive totals when the category registry changes (custom category added,
+  // or its excludeFromTotal flag flipped).
+  const categories = useCategories();
+
   useEffect(() => {
-    Promise.all([loadAllPersonalExpenses(), loadLendings(), loadPaymentMethods()]).then(([exps, lends, pms]) => {
+    Promise.all([loadAllPersonalExpenses(), loadLendings(), loadPaymentMethods(), initCategories()]).then(([exps, lends, pms]) => {
       setExpenses(exps.sort((a, b) => b.date - a.date));
       setLendings(lends.sort((a, b) => b.createdAt - a.createdAt));
       setPaymentMethods(pms);
       setLoading(false);
     });
   }, []);
+
+  // Keep the non-React lookup used by exports/labels in sync.
+  useEffect(() => {
+    setPaymentMethodRegistry(paymentMethods);
+  }, [paymentMethods]);
 
   // Expense CRUD
   const addExpense = useCallback(async (e: PersonalExpense) => {
@@ -97,32 +112,54 @@ export function PersonalStoreProvider({ children }: { children: ReactNode }) {
       totals[key] = 0;
     }
     for (const e of expenses) {
-      if (e.monthKey.startsWith(`${year}-`)) {
+      if (e.monthKey.startsWith(`${year}-`) && !isExcludedCategory(e.category)) {
         totals[e.monthKey] = (totals[e.monthKey] ?? 0) + e.amount;
       }
     }
     return totals;
-  }, [expenses]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expenses, categories]);
+
+  const getMonthTotal = useCallback((monthKey: string): number => {
+    return expenses.reduce(
+      (sum, e) => (e.monthKey === monthKey && !isExcludedCategory(e.category) ? sum + e.amount : sum),
+      0
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expenses, categories]);
 
   const getCategoryBreakdown = useCallback((monthKey: string): Record<string, number> => {
     const result: Record<string, number> = {};
     for (const e of expenses) {
-      if (e.monthKey === monthKey) {
+      if (e.monthKey === monthKey && !isExcludedCategory(e.category)) {
         result[e.category] = (result[e.category] ?? 0) + e.amount;
       }
     }
     return result;
-  }, [expenses]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expenses, categories]);
+
+  const getExcludedBreakdown = useCallback((monthKey: string): Record<string, number> => {
+    const result: Record<string, number> = {};
+    for (const e of expenses) {
+      if (e.monthKey === monthKey && isExcludedCategory(e.category)) {
+        result[e.category] = (result[e.category] ?? 0) + e.amount;
+      }
+    }
+    return result;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expenses, categories]);
 
   const getPaymentBreakdown = useCallback((monthKey: string): Record<string, number> => {
     const result: Record<string, number> = {};
     for (const e of expenses) {
-      if (e.monthKey === monthKey) {
+      if (e.monthKey === monthKey && !isExcludedCategory(e.category)) {
         result[e.paymentMethod] = (result[e.paymentMethod] ?? 0) + e.amount;
       }
     }
     return result;
-  }, [expenses]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expenses, categories]);
 
   const value = useMemo(() => ({
     expenses, lendings, paymentMethods, loading,
@@ -130,7 +167,8 @@ export function PersonalStoreProvider({ children }: { children: ReactNode }) {
     addLending, updateLending, removeLending,
     addPaymentMethod, removePaymentMethod,
     getMonthExpenses, getYearTotals, getCategoryBreakdown, getPaymentBreakdown,
-  }), [expenses, lendings, paymentMethods, loading, addExpense, updateExpense, removeExpense, addLending, updateLending, removeLending, addPaymentMethod, removePaymentMethod, getMonthExpenses, getYearTotals, getCategoryBreakdown, getPaymentBreakdown]);
+    getMonthTotal, getExcludedBreakdown,
+  }), [expenses, lendings, paymentMethods, loading, addExpense, updateExpense, removeExpense, addLending, updateLending, removeLending, addPaymentMethod, removePaymentMethod, getMonthExpenses, getYearTotals, getCategoryBreakdown, getPaymentBreakdown, getMonthTotal, getExcludedBreakdown]);
 
   return <PersonalContext.Provider value={value}>{children}</PersonalContext.Provider>;
 }

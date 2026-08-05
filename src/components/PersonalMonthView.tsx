@@ -4,8 +4,8 @@ import { useApp } from "@/store/AppStore";
 import { PersonalExpense } from "@/lib/types";
 import { PersonalExpenseDialog } from "./PersonalExpenseDialog";
 import { fmtMoney, relativeTime } from "@/lib/format";
-import { getCategory, CATEGORIES } from "@/lib/categories";
-import { getPaymentMethod, DEFAULT_PAYMENT_METHODS, monthKeyFullLabel } from "@/lib/personal-utils";
+import { getCategory, useCategories } from "@/lib/categories";
+import { getPaymentMethod, getPaymentMethodIcon, monthKeyFullLabel } from "@/lib/personal-utils";
 import { Plus, Pencil, Trash2, Search, X, Image as ImageIcon, Download, FileText, FileSpreadsheet, Copy, TableProperties, LayoutList, Calendar, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,14 +22,29 @@ interface Props {
 }
 
 export function PersonalMonthView({ monthKey }: Props) {
-  const { getMonthExpenses, getCategoryBreakdown, getPaymentBreakdown, removeExpense } = usePersonal();
+  const { getMonthExpenses, getCategoryBreakdown, getPaymentBreakdown, getMonthTotal, getExcludedBreakdown, removeExpense, paymentMethods } = usePersonal();
   const { profile } = useApp();
   const currency = profile.defaultCurrency ?? "INR";
+  const categories = useCategories();
 
   const expenses = useMemo(() => getMonthExpenses(monthKey), [getMonthExpenses, monthKey]);
   const catBreakdown = useMemo(() => getCategoryBreakdown(monthKey), [getCategoryBreakdown, monthKey]);
   const payBreakdown = useMemo(() => getPaymentBreakdown(monthKey), [getPaymentBreakdown, monthKey]);
-  const monthTotal = useMemo(() => expenses.reduce((s, e) => s + e.amount, 0), [expenses]);
+  const excludedBreakdown = useMemo(() => getExcludedBreakdown(monthKey), [getExcludedBreakdown, monthKey]);
+  /** Counted spend — excludes categories flagged "don't count in totals" (e.g. CC Paid). */
+  const monthTotal = useMemo(() => getMonthTotal(monthKey), [getMonthTotal, monthKey]);
+  const excludedTotal = useMemo(
+    () => Object.values(excludedBreakdown).reduce((a, b) => a + b, 0),
+    [excludedBreakdown]
+  );
+  const excludedLabels = useMemo(
+    () => Object.keys(excludedBreakdown).map((id) => getCategory(id).label).join(", "),
+    [excludedBreakdown]
+  );
+
+  /** jspdf-autotable attaches lastAutoTable to the doc but doesn't type it. */
+  const tableEndY = (doc: jsPDF, fallback: number) =>
+    (doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? fallback;
 
   // Export functions
   const buildPDFDoc = () => {
@@ -39,15 +54,18 @@ export function PersonalMonthView({ monthKey }: Props) {
     doc.setFontSize(10);
     doc.setTextColor(120);
     doc.text(`Total: ${fmtMoney(monthTotal, currency)} · ${expenses.length} transactions · Generated ${new Date().toLocaleDateString()}`, 14, 25);
+    if (excludedTotal > 0) {
+      doc.text(`Not counted in total: ${fmtMoney(excludedTotal, currency)} (${excludedLabels})`, 14, 30);
+    }
     doc.setTextColor(0);
 
     autoTable(doc, {
-      startY: 32,
+      startY: excludedTotal > 0 ? 36 : 32,
       head: [["Date", "Description", "Category", "Payment", `Amount (${currency})`, "Note"]],
       body: expenses.sort((a, b) => b.date - a.date).map((e) => [
         new Date(e.date).toLocaleDateString(),
         e.description,
-        getCategory(e.category).label,
+        getCategory(e.category).label + (getCategory(e.category).excludeFromTotal ? " *" : ""),
         getPaymentMethod(e.paymentMethod).label,
         fmtMoney(e.amount, currency),
         e.note ?? "",
@@ -56,7 +74,7 @@ export function PersonalMonthView({ monthKey }: Props) {
       headStyles: { fillColor: [249, 115, 22], fontSize: 8 },
     });
 
-    const lastY = (doc as any).lastAutoTable?.finalY ?? 60;
+    const lastY = tableEndY(doc, 60);
     doc.setFontSize(11);
     doc.text("Category Breakdown", 14, lastY + 10);
     autoTable(doc, {
@@ -70,6 +88,14 @@ export function PersonalMonthView({ monthKey }: Props) {
       styles: { fontSize: 8 },
       headStyles: { fillColor: [34, 197, 94] },
     });
+
+    if (excludedTotal > 0) {
+      const catY = tableEndY(doc, lastY + 20);
+      doc.setFontSize(8);
+      doc.setTextColor(120);
+      doc.text("* Not counted in the total or the category breakdown.", 14, catY + 6);
+      doc.setTextColor(0);
+    }
     return doc;
   };
 
@@ -85,14 +111,18 @@ export function PersonalMonthView({ monthKey }: Props) {
   };
 
   const buildTextSummary = () => {
-    const lines = [`Personal Expenses — ${monthKeyFullLabel(monthKey)}`, `Total: ${fmtMoney(monthTotal, currency)}`, ""];
+    const lines = [`Personal Expenses — ${monthKeyFullLabel(monthKey)}`, `Total: ${fmtMoney(monthTotal, currency)}`];
+    if (excludedTotal > 0) lines.push(`Not counted (${excludedLabels}): ${fmtMoney(excludedTotal, currency)}`);
+    lines.push("");
     for (const e of expenses.sort((a, b) => b.date - a.date)) {
-      lines.push(`${new Date(e.date).toLocaleDateString()} | ${e.description} | ${getCategory(e.category).label} | ${getPaymentMethod(e.paymentMethod).label} | ${fmtMoney(e.amount, currency)}`);
+      const cat = getCategory(e.category);
+      lines.push(`${new Date(e.date).toLocaleDateString()} | ${e.description} | ${cat.label}${cat.excludeFromTotal ? " *" : ""} | ${getPaymentMethod(e.paymentMethod).label} | ${fmtMoney(e.amount, currency)}`);
     }
     lines.push("", "— Category Breakdown —");
     for (const [catId, amt] of Object.entries(catBreakdown).sort((a, b) => b[1] - a[1])) {
       lines.push(`${getCategory(catId).label}: ${fmtMoney(amt, currency)} (${(monthTotal > 0 ? (amt / monthTotal) * 100 : 0).toFixed(0)}%)`);
     }
+    if (excludedTotal > 0) lines.push("", "* Not counted in the total or the category breakdown.");
     return lines.join("\n");
   };
 
@@ -105,6 +135,7 @@ export function PersonalMonthView({ monthKey }: Props) {
       Category: getCategory(e.category).label,
       "Payment Method": getPaymentMethod(e.paymentMethod).label,
       Amount: e.amount,
+      "Counted in total": getCategory(e.category).excludeFromTotal ? "No" : "Yes",
       Note: e.note ?? "",
     }));
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "Expenses");
@@ -113,7 +144,11 @@ export function PersonalMonthView({ monthKey }: Props) {
       Category: getCategory(catId).label,
       Amount: amt,
       "% of Total": `${(monthTotal > 0 ? (amt / monthTotal) * 100 : 0).toFixed(1)}%`,
+      "Counted in total": "Yes",
     }));
+    for (const [catId, amt] of Object.entries(excludedBreakdown).sort((a, b) => b[1] - a[1])) {
+      catRows.push({ Category: getCategory(catId).label, Amount: amt, "% of Total": "—", "Counted in total": "No" });
+    }
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(catRows), "Categories");
 
     XLSX.writeFile(wb, `personal_expenses_${monthKey}.xlsx`);
@@ -169,7 +204,8 @@ export function PersonalMonthView({ monthKey }: Props) {
       const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
       if (!map.has(key)) map.set(key, { ts: e.date, total: 0, items: [] });
       const g = map.get(key)!;
-      g.total += e.amount;
+      // Day totals follow the month total: excluded categories are listed, not summed.
+      if (!getCategory(e.category).excludeFromTotal) g.total += e.amount;
       g.items.push(e);
     }
     return [...map.values()].sort((a, b) => b.ts - a.ts);
@@ -191,6 +227,11 @@ export function PersonalMonthView({ monthKey }: Props) {
           <div>
             <h2 className="text-lg font-bold">{monthKeyFullLabel(monthKey)}</h2>
             <p className="text-xs text-muted-foreground mt-0.5">{expenses.length} transaction{expenses.length !== 1 ? "s" : ""}</p>
+            {excludedTotal > 0 && (
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                + {fmtMoney(excludedTotal, currency)} not counted ({excludedLabels})
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <span className="text-lg font-bold tabular-nums">{fmtMoney(monthTotal, currency)}</span>
@@ -284,9 +325,10 @@ export function PersonalMonthView({ monthKey }: Props) {
             <DropdownMenuContent className="max-h-60 overflow-y-auto">
               <DropdownMenuItem onClick={() => setFilterCat("all")}>All categories</DropdownMenuItem>
               <DropdownMenuSeparator />
-              {CATEGORIES.map((c) => (
+              {categories.map((c) => (
                 <DropdownMenuItem key={c.id} onClick={() => setFilterCat(c.id)}>
                   <c.icon className="h-3.5 w-3.5" style={{ color: c.color }} /> {c.label}
+                  {c.excludeFromTotal && <span className="ml-auto pl-2 text-[10px] text-muted-foreground">not counted</span>}
                 </DropdownMenuItem>
               ))}
             </DropdownMenuContent>
@@ -298,14 +340,17 @@ export function PersonalMonthView({ monthKey }: Props) {
                 {filterPay === "all" ? "Payment" : getPaymentMethod(filterPay).label}
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent>
+            <DropdownMenuContent className="max-h-60 overflow-y-auto">
               <DropdownMenuItem onClick={() => setFilterPay("all")}>All methods</DropdownMenuItem>
               <DropdownMenuSeparator />
-              {DEFAULT_PAYMENT_METHODS.map((m) => (
-                <DropdownMenuItem key={m.id} onClick={() => setFilterPay(m.id)}>
-                  <m.icon className="h-3.5 w-3.5" /> {m.label}
-                </DropdownMenuItem>
-              ))}
+              {paymentMethods.map((m) => {
+                const Icon = getPaymentMethodIcon(m);
+                return (
+                  <DropdownMenuItem key={m.id} onClick={() => setFilterPay(m.id)}>
+                    <Icon className="h-3.5 w-3.5" /> {m.label}
+                  </DropdownMenuItem>
+                );
+              })}
             </DropdownMenuContent>
           </DropdownMenu>
 
@@ -361,7 +406,12 @@ export function PersonalMonthView({ monthKey }: Props) {
                         <span className="font-medium truncate max-w-[150px] md:max-w-none">{e.description}</span>
                       </div>
                     </td>
-                    <td className="px-3 py-2 text-xs text-muted-foreground">{cat.label}</td>
+                    <td className="px-3 py-2 text-xs text-muted-foreground">
+                      {cat.label}
+                      {cat.excludeFromTotal && (
+                        <span className="ml-1 rounded bg-secondary px-1 py-0.5 text-[9px] font-medium" title="Not counted in totals">not counted</span>
+                      )}
+                    </td>
                     <td className="px-3 py-2 text-xs text-muted-foreground hidden md:table-cell">
                       <span className="inline-flex items-center gap-1"><pm.icon className="h-3 w-3" /> {pm.label}</span>
                     </td>
@@ -426,6 +476,9 @@ export function PersonalMonthView({ monthKey }: Props) {
                           <span className="inline-flex items-center gap-0.5"><PMIcon className="h-3 w-3" /> {pm.label}</span>
                           <span>·</span>
                           <span>{relativeTime(e.date)}</span>
+                          {cat.excludeFromTotal && (
+                            <span className="rounded bg-secondary px-1 py-0.5 text-[9px] font-medium" title="Not counted in totals">not counted</span>
+                          )}
                         </div>
                         {e.note && <p className="mt-1 text-xs text-muted-foreground line-clamp-1">{e.note}</p>}
                         <div className="mt-1.5 flex items-center gap-1">

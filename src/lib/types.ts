@@ -134,6 +134,24 @@ export interface CustomPaymentMethod {
   isDefault?: boolean;
 }
 
+/**
+ * A spend category. Built-ins ship with the app (isDefault); users can add
+ * their own from the picker and they persist in IndexedDB/localStorage.
+ */
+export interface CustomCategory {
+  id: string;
+  label: string;
+  icon?: string;         // key into CATEGORY_ICON_MAP
+  color?: string;        // hsl(...) string
+  isDefault?: boolean;
+  /**
+   * Amount is tracked but never added to spend totals — e.g. "CC Paid",
+   * where the underlying purchases were already logged on the card.
+   */
+  excludeFromTotal?: boolean;
+  createdAt?: number;
+}
+
 export interface PersonalExpense {
   id: string;
   description: string;

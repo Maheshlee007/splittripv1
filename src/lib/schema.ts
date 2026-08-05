@@ -141,6 +141,16 @@ export const CustomPaymentMethodSchema = z.object({
   isDefault: z.boolean().optional(),
 }).passthrough();
 
+export const CustomCategorySchema = z.object({
+  id: safeStr(64, 1),
+  label: safeStr(80),
+  icon: safeStr(40).optional(),
+  color: safeStr(40).optional(),
+  isDefault: z.boolean().optional(),
+  excludeFromTotal: z.boolean().optional(),
+  createdAt: finiteTimestamp.optional(),
+}).passthrough();
+
 export const LendingSchema = z.object({
   id: safeStr(64, 1),
   personName: safeStr(80),
@@ -171,6 +181,7 @@ export const BackupSchema = z.object({
   personalExpenses: z.array(PersonalExpenseSchema).max(20000).optional(),
   personalBudgets: z.array(PersonalBudgetSchema).max(2000).optional(),
   paymentMethods: z.array(CustomPaymentMethodSchema).max(200).optional(),
+  categories: z.array(CustomCategorySchema).max(200).optional(),
   lendings: z.array(LendingSchema).max(5000).optional(),
 }).passthrough();
 

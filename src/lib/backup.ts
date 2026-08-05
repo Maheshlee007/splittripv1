@@ -1,42 +1,47 @@
-import { Group, Profile, PersonalExpense, PersonalBudget, CustomPaymentMethod, Lending } from "./types";
+import { Group, Profile, PersonalExpense, PersonalBudget, CustomPaymentMethod, CustomCategory, Lending } from "./types";
 import {
   loadGroups, loadProfile, saveGroup, saveProfile,
   loadAllPersonalExpenses, savePersonalExpense,
   loadPersonalBudgets, savePersonalBudget,
   loadPaymentMethods, savePaymentMethod,
+  loadCategories, saveCategory,
   loadLendings, saveLending,
 } from "./storage";
 
 export interface FullBackup {
   app: "splittrip";
-  version: 1 | 2 | 3;
+  version: 1 | 2 | 3 | 4;
   exportedAt: number;
   profile: Profile | null;
   groups: Group[];
   personalExpenses?: PersonalExpense[];
   personalBudgets?: PersonalBudget[];
   paymentMethods?: CustomPaymentMethod[];
+  /** User-added categories only — built-ins ship with the app. */
+  categories?: CustomCategory[];
   lendings?: Lending[];
 }
 
 export async function buildBackup(): Promise<FullBackup> {
-  const [profile, groups, personalExpenses, personalBudgets, paymentMethods, lendings] = await Promise.all([
+  const [profile, groups, personalExpenses, personalBudgets, paymentMethods, categories, lendings] = await Promise.all([
     loadProfile(),
     loadGroups(),
     loadAllPersonalExpenses(),
     loadPersonalBudgets(),
     loadPaymentMethods(),
+    loadCategories(),
     loadLendings(),
   ]);
   return {
     app: "splittrip",
-    version: 3,
+    version: 4,
     exportedAt: Date.now(),
     profile,
     groups,
     personalExpenses,
     personalBudgets,
     paymentMethods,
+    categories,
     lendings,
   };
 }
@@ -57,6 +62,7 @@ export async function restoreBackup(file: File): Promise<{
   personalExpenses: number;
   personalBudgets: number;
   paymentMethods: number;
+  categories: number;
   lendings: number;
 }> {
   const text = await file.text();
@@ -91,6 +97,13 @@ export async function restoreBackup(file: File): Promise<{
       pmCount++;
     }
   }
+  let catCount = 0;
+  if (Array.isArray(data.categories)) {
+    for (const c of data.categories) {
+      await saveCategory(c);
+      catCount++;
+    }
+  }
   let lendingCount = 0;
   if (Array.isArray(data.lendings)) {
     for (const l of data.lendings) {
@@ -103,6 +116,7 @@ export async function restoreBackup(file: File): Promise<{
     personalExpenses: personalCount,
     personalBudgets: budgetCount,
     paymentMethods: pmCount,
+    categories: catCount,
     lendings: lendingCount,
   };
 }

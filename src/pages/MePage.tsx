@@ -221,6 +221,7 @@ function BackupSection() {
       ];
       if (r.personalBudgets) parts.push(`${r.personalBudgets} budget${r.personalBudgets === 1 ? "" : "s"}`);
       if (r.paymentMethods) parts.push(`${r.paymentMethods} payment method${r.paymentMethods === 1 ? "" : "s"}`);
+      if (r.categories) parts.push(`${r.categories} categor${r.categories === 1 ? "y" : "ies"}`);
       toast.success(`Restored ${parts.join(" + ")}. Refreshing…`);
       setTimeout(() => window.location.reload(), 1200);
     } catch (e: any) {

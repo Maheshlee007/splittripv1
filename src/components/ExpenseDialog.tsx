@@ -5,7 +5,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Group, Expense, Split, SplitMode, ExpenseKind } from "@/lib/types";
-import { CATEGORIES } from "@/lib/categories";
+import { CategoryPicker } from "./CategoryPicker";
 import { fmtMoney } from "@/lib/format";
 import { computeShareAmount } from "@/lib/balances";
 import { cn } from "@/lib/utils";
@@ -287,25 +287,13 @@ export function ExpenseDialog({ open, onOpenChange, group, defaultPaidBy, initia
 
               <div>
                 <Label>Category</Label>
-                <div className="mt-1 flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
-                  {CATEGORIES.map((c) => {
-                    const Icon = c.icon;
-                    const active = c.id === category;
-                    return (
-                      <button
-                        key={c.id}
-                        onClick={() => expenseKind === "general" && setCategory(c.id)}
-                        className={cn(
-                          "flex shrink-0 flex-col items-center gap-0.5 rounded-lg px-2 py-1.5 text-[10px] font-medium transition",
-                          active ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground"
-                        )}
-                        disabled={expenseKind !== "general"}
-                      >
-                        <Icon className="h-3.5 w-3.5" />
-                        {c.label}
-                      </button>
-                    );
-                  })}
+                <div className="mt-1">
+                  <CategoryPicker
+                    value={category}
+                    onChange={setCategory}
+                    hideExcluded
+                    disabled={expenseKind !== "general"}
+                  />
                 </div>
                 {expenseKind !== "general" && (
                   <p className="mt-1 text-[11px] text-muted-foreground">Advance types are automatically saved under Advance category.</p>

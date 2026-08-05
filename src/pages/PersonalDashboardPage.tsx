@@ -16,14 +16,19 @@ import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Tooltip, Lege
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
 
 export default function PersonalDashboardPage() {
-  const { expenses, lendings, getMonthExpenses, getCategoryBreakdown, getPaymentBreakdown } = usePersonal();
+  const { expenses, lendings, getMonthExpenses, getCategoryBreakdown, getPaymentBreakdown, getMonthTotal, getExcludedBreakdown } = usePersonal();
   const { profile } = useApp();
   const navigate = useNavigate();
   const currency = profile.defaultCurrency ?? "INR";
 
   const currentMonthKey = deriveMonthKey(Date.now());
   const monthExpenses = useMemo(() => getMonthExpenses(currentMonthKey), [getMonthExpenses, currentMonthKey]);
-  const monthTotal = useMemo(() => monthExpenses.reduce((s, e) => s + e.amount, 0), [monthExpenses]);
+  /** Counted spend — excludes categories flagged "don't count in totals" (e.g. CC Paid). */
+  const monthTotal = useMemo(() => getMonthTotal(currentMonthKey), [getMonthTotal, currentMonthKey]);
+  const excludedTotal = useMemo(
+    () => Object.values(getExcludedBreakdown(currentMonthKey)).reduce((a, b) => a + b, 0),
+    [getExcludedBreakdown, currentMonthKey]
+  );
   const catBreakdown = useMemo(() => getCategoryBreakdown(currentMonthKey), [getCategoryBreakdown, currentMonthKey]);
   const payBreakdown = useMemo(() => getPaymentBreakdown(currentMonthKey), [getPaymentBreakdown, currentMonthKey]);
   const recentAll = useMemo(() => [...monthExpenses].sort((a, b) => b.date - a.date).slice(0, 10), [monthExpenses]);
@@ -57,7 +62,10 @@ export default function PersonalDashboardPage() {
               <span className="uppercase tracking-wider font-medium">This Month</span>
             </div>
             <p className="text-2xl font-bold tabular-nums">{fmtMoney(monthTotal, currency)}</p>
-            <p className="mt-0.5 text-[11px] text-muted-foreground">{monthExpenses.length} transaction{monthExpenses.length !== 1 ? "s" : ""}</p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">
+              {monthExpenses.length} transaction{monthExpenses.length !== 1 ? "s" : ""}
+              {excludedTotal > 0 && ` · ${fmtMoney(excludedTotal, currency)} not counted`}
+            </p>
           </div>
 
           {/* Owed to me */}
@@ -197,7 +205,7 @@ export default function PersonalDashboardPage() {
                 </Button>
               </div>
             ) : (
-              <div className="space-y-0.5">
+              <div className="space-y-0.5 h-80 overflow-y-scroll overflow-x-hidden">
                 {recentAll.map((e) => {
                   const cat = getCategory(e.category);
                   return (

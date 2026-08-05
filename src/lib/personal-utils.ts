@@ -1,4 +1,7 @@
-import { Smartphone, CreditCard, Wallet, Banknote, WalletCards, CircleDollarSign } from "lucide-react";
+import {
+  Smartphone, CreditCard, Wallet, Banknote, WalletCards, CircleDollarSign,
+  Landmark, PiggyBank, QrCode, Coins, Gift, Receipt, Building2,
+} from "lucide-react";
 import type { CustomPaymentMethod } from "./types";
 
 export const ICON_MAP: Record<string, typeof Smartphone> = {
@@ -7,8 +10,21 @@ export const ICON_MAP: Record<string, typeof Smartphone> = {
   "wallet": Wallet,
   "banknote": Banknote,
   "wallet-cards": WalletCards,
+  "landmark": Landmark,
+  "piggy-bank": PiggyBank,
+  "qr-code": QrCode,
+  "coins": Coins,
+  "gift": Gift,
+  "receipt": Receipt,
+  "building": Building2,
   "default": CircleDollarSign,
 };
+
+/** Icon keys offered when adding a payment method. */
+export const PAYMENT_ICON_CHOICES = [
+  "smartphone", "credit-card", "wallet", "banknote", "wallet-cards",
+  "landmark", "piggy-bank", "qr-code", "coins", "gift", "receipt", "building", "default",
+];
 
 export const DEFAULT_PAYMENT_METHODS: { id: string; label: string; icon: typeof Smartphone }[] = [
   { id: "upi", label: "UPI", icon: Smartphone },
@@ -22,9 +38,23 @@ export function getPaymentMethodIcon(pm: CustomPaymentMethod) {
   return ICON_MAP[pm.icon ?? "default"] ?? CircleDollarSign;
 }
 
+/**
+ * Mirror of PersonalStore's payment methods so non-React consumers
+ * (exports, breakdown labels) can resolve user-added methods too.
+ */
+let paymentRegistry: CustomPaymentMethod[] = [];
+
+export function setPaymentMethodRegistry(methods: CustomPaymentMethod[]) {
+  paymentRegistry = methods;
+}
+
 export function getPaymentMethod(id: string) {
+  const custom = paymentRegistry.find((m) => m.id === id);
+  if (custom) return { id: custom.id, label: custom.label, icon: getPaymentMethodIcon(custom) };
   const found = DEFAULT_PAYMENT_METHODS.find((m) => m.id === id);
-  return found ?? { id, label: id, icon: CircleDollarSign };
+  if (found) return found;
+  const label = id ? id.replace(/[_-]+/g, " ").replace(/\b\w/g, (m) => m.toUpperCase()) : "—";
+  return { id, label, icon: CircleDollarSign };
 }
 
 export function deriveMonthKey(date: number): string {
