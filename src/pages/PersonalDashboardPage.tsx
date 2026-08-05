@@ -33,7 +33,7 @@ export default function PersonalDashboardPage() {
   const payBreakdown = useMemo(() => getPaymentBreakdown(currentMonthKey), [getPaymentBreakdown, currentMonthKey]);
   const recentAll = useMemo(() => [...monthExpenses].sort((a, b) => b.date - a.date).slice(0, 10), [monthExpenses]);
 
-  const topCats = useMemo(() => Object.entries(catBreakdown).sort((a, b) => b[1] - a[1]).slice(0, 6), [catBreakdown]);
+  const topCats = useMemo(() => Object.entries(catBreakdown).sort((a, b) => b[1] - a[1]).slice(0, 8), [catBreakdown]);
 
   // Lending summary
   const pendingLendings = useMemo(() => lendings.filter((l) => l.status !== "settled"), [lendings]);
@@ -129,7 +129,7 @@ export default function PersonalDashboardPage() {
                       data: topCats.map(([, amt]) => amt),
                       backgroundColor: topCats.map(([catId]) => getCategory(catId).color),
                       borderRadius: 6,
-                      maxBarThickness: 40,
+                      maxBarThickness: 30,
                     }],
                   }}
                   options={{
@@ -151,7 +151,7 @@ export default function PersonalDashboardPage() {
                       y: {
                         grid: { color: "rgba(128,128,128,0.1)" },
                         ticks: {
-                          font: { size: 10 },
+                          font: { size: 8 },
                           callback: (v) => fmtMoney(v as number, currency),
                         },
                       },
